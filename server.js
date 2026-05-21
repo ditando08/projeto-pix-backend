@@ -159,7 +159,7 @@ app.post("/criar-pix", async (req, res) => {
 
         value: Number(valor) * 100,
 
-        comment: "Doacao Site",
+        comment: "cantb",
 
         customer: {
   name: gerarNome(),
