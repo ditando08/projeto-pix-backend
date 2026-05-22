@@ -26,7 +26,7 @@ app.post("/criar-pix", async (req, res) => {
       {
         correlationID: "cantb_" + Date.now(),
 
-        value: Number(amount) * 100,
+        value: Number(amount),
 
         comment: "Doacao Site",
 
