@@ -26,7 +26,7 @@ app.post("/criar-pix", async (req, res) => {
       {
         correlationID: "cantb_" + Date.now(),
 
-        value: Number(amount),
+        value: Number(amount) / 100,
 
         comment: "Doacao Site",
 
@@ -47,16 +47,32 @@ app.post("/criar-pix", async (req, res) => {
 
     console.log(response.data);
 
-    const charge =
-      response.data.charge ||
-      response.data.charges?.[0];
+    console.log("WOOVI RESPONSE:", response.data);
 
-    res.json({
-  paymentId: charge.correlationID,
-  qrCode: charge.brCode,
-  brCode: charge.brCode,
-  qrCodeImage: charge.qrCodeImage,
-  amount: charge.value
+const charge =
+  response.data?.charge ||
+  response.data?.charges?.[0] ||
+  response.data;
+
+console.log("CHARGE FINAL:", charge);
+
+res.json({
+  paymentId:
+    charge.correlationID ||
+    charge._id ||
+    "",
+
+  qrCode:
+    charge.brCode || "",
+
+  brCode:
+    charge.brCode || "",
+
+  qrCodeImage:
+    charge.qrCodeImage || "",
+
+  amount:
+    charge.value || 0
 });
 
   } catch (error) {
