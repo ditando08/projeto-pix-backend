@@ -18,7 +18,7 @@ app.post("/criar-pix", async (req, res) => {
   try {
 
     const { nome, valor } = req.body;
-
+console.log(req.body);
     const response = await axios.post(
       "https://api.woovi.com/api/v1/charge",
       {
