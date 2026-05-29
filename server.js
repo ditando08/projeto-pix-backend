@@ -19,7 +19,20 @@ app.post("/criar-pix", async (req, res) => {
 
   try {
 
-    const { amount } = req.body;
+    const {
+  amount,
+  gclid,
+  acc,
+  camp,
+  mail
+} = req.body;
+
+console.log("TRACKING:", {
+  gclid,
+  acc,
+  camp,
+  mail
+});
 
     const response = await axios.post(
       "https://api.woovi.com/api/v1/charge",
