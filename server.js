@@ -102,17 +102,27 @@ try {
         status: "pendente"
       });
 
-    console.log(
-      "PIX SALVO NO SUPABASE"
-    );
+    const { error } = await supabase
+  .from("pix_pagamentos")
+  .insert({
+    paymentid: charge.correlationID,
+    gclid: gclid || "",
+    acc: acc || "",
+    camp: camp || "",
+    mail: mail || "",
+    valor: charge.value,
+    status: "pendente"
+  });
+
+console.log("SUPABASE RESULT:", error);
   }
 
 } catch (e) {
 
   console.log(
-    "ERRO SUPABASE:",
-    e.message
-  );
+  "ERRO SUPABASE COMPLETO:",
+  e
+);
 
 }
 
