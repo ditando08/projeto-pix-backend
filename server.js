@@ -193,15 +193,60 @@ app.get("/consultar-pix", async (req, res) => {
 
 app.post("/webhook-woovi", async (req, res) => {
 
-  console.log("======== WEBHOOK ========");
+  try {
 
-  console.log(
-    JSON.stringify(req.body, null, 2)
-  );
+    console.log(
+      "WEBHOOK:",
+      JSON.stringify(req.body, null, 2)
+    );
 
-  console.log("======== FIM ========");
+    if (
+      req.body.event ===
+      "OPENPIX:CHARGE_COMPLETED"
+    ) {
 
-  res.status(200).send("ok");
+      const correlationID =
+        req.body.charge?.correlationID;
+
+      const paidAt =
+        req.body.charge?.paidAt ||
+        new Date().toISOString();
+
+      console.log(
+        "PIX PAGO:",
+        correlationID
+      );
+
+      const { error } = await supabase
+        .from("pix_pagamentos")
+        .update({
+          status: "pago",
+          paid_at: paidAt
+        })
+        .eq(
+          "paymentid",
+          correlationID
+        );
+
+      console.log(
+        "UPDATE ERROR:",
+        error
+      );
+
+    }
+
+    res.sendStatus(200);
+
+  } catch (e) {
+
+    console.log(
+      "ERRO WEBHOOK:",
+      e
+    );
+
+    res.sendStatus(500);
+
+  }
 
 });
 
