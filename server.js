@@ -6,11 +6,17 @@ require("dotenv").config();
 const { createClient } =
 require("@supabase/supabase-js");
 
-const supabase =
-createClient(
-  process.env.SUPABASE_URL,
+let supabase = null;
+
+if (
+  process.env.SUPABASE_URL &&
   process.env.SUPABASE_KEY
-);
+) {
+  supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_KEY
+  );
+}
 
 const app = express();
 
@@ -81,9 +87,21 @@ const charge =
   response.data;
   try {
 
+  if (supabase) {
+
   await supabase
-  .from("pix_pagamentos")
-  .insert(...)
+    .from("pix_pagamentos")
+    .insert({
+      paymentid: charge.correlationID,
+      gclid: gclid || "",
+      acc: acc || "",
+      camp: camp || "",
+      mail: mail || "",
+      valor: charge.value,
+      status: "pendente"
+    });
+
+}
       paymentid:
         charge.correlationID,
 
