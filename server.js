@@ -200,6 +200,21 @@ app.post("/webhook-woovi", async (req, res) => {
       JSON.stringify(req.body, null, 2)
     );
 
+    const event =
+      req.body.event ||
+      req.body.evento;
+
+    if (
+      event ===
+      "OPENPIX:CHARGE_COMPLETED"
+    ) {
+
+      console.log(
+        "PAGAMENTO RECEBIDO"
+      );
+
+    }
+
     res.sendStatus(200);
 
   } catch (e) {
