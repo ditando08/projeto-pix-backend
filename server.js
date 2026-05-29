@@ -193,37 +193,15 @@ app.get("/consultar-pix", async (req, res) => {
 
 app.post("/webhook-woovi", async (req, res) => {
 
-  try {
+  console.log("======== WEBHOOK ========");
 
-    console.log(
-      "WEBHOOK WOOVI:",
-      JSON.stringify(req.body, null, 2)
-    );
+  console.log(
+    JSON.stringify(req.body, null, 2)
+  );
 
-    const event =
-      req.body.event ||
-      req.body.evento;
+  console.log("======== FIM ========");
 
-    if (
-      event ===
-      "OPENPIX:CHARGE_COMPLETED"
-    ) {
-
-      console.log(
-        "PAGAMENTO RECEBIDO"
-      );
-
-    }
-
-    res.sendStatus(200);
-
-  } catch (e) {
-
-    console.log(e);
-
-    res.sendStatus(500);
-
-  }
+  res.status(200).send("ok");
 
 });
 
