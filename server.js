@@ -3,6 +3,14 @@ const axios = require("axios");
 const cors = require("cors");
 
 require("dotenv").config();
+const { createClient } =
+require("@supabase/supabase-js");
+
+const supabase =
+createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
+);
 
 const app = express();
 
@@ -71,6 +79,45 @@ const charge =
   response.data?.charge ||
   response.data?.charges?.[0] ||
   response.data;
+  try {
+
+  await supabase
+    .from("pix_pagamentos")
+    .insert({
+      paymentid:
+        charge.correlationID,
+
+      gclid:
+        gclid || "",
+
+      acc:
+        acc || "",
+
+      camp:
+        camp || "",
+
+      mail:
+        mail || "",
+
+      valor:
+        charge.value,
+
+      status:
+        "pendente"
+    });
+
+  console.log(
+    "PIX SALVO NO SUPABASE"
+  );
+
+} catch (e) {
+
+  console.log(
+    "ERRO SUPABASE:",
+    e.message
+  );
+
+}
 
 console.log("CHARGE FINAL:", charge);
 
