@@ -85,7 +85,8 @@ const charge =
   response.data?.charge ||
   response.data?.charges?.[0] ||
   response.data;
-  try {
+
+try {
 
   if (supabase) {
 
@@ -105,40 +106,6 @@ const charge =
       "PIX SALVO NO SUPABASE"
     );
   }
-
-} catch (e) {
-
-  console.log(
-    "ERRO SUPABASE:",
-    e.message
-  );
-
-}
-      paymentid:
-        charge.correlationID,
-
-      gclid:
-        gclid || "",
-
-      acc:
-        acc || "",
-
-      camp:
-        camp || "",
-
-      mail:
-        mail || "",
-
-      valor:
-        charge.value,
-
-      status:
-        "pendente"
-    });
-
-  console.log(
-    "PIX SALVO NO SUPABASE"
-  );
 
 } catch (e) {
 
