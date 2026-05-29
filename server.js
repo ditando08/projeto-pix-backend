@@ -93,6 +93,8 @@ const charge =
 
 try {
 
+  try {
+
   if (supabase) {
 
     const { data, error } = await supabase
@@ -110,7 +112,7 @@ try {
     console.log("SUPABASE DATA:", data);
     console.log("SUPABASE ERROR:", error);
 
-  }
+  }   // <- fecha o if
 
 } catch (e) {
 
@@ -118,14 +120,6 @@ try {
     "ERRO SUPABASE COMPLETO:",
     e
   );
-  }
-
-} catch (e) {
-
-  console.log(
-  "ERRO SUPABASE COMPLETO:",
-  e
-);
 
 }
 
