@@ -28,6 +28,10 @@ app.post("/criar-pix", async (req, res) => {
   mail
 } = req.body;
 
+if (gclid || acc || camp || mail) {
+  console.log("TRACKING OK");
+}
+
 console.log("TRACKING:", {
   gclid,
   acc,
