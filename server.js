@@ -3,9 +3,11 @@ const axios = require("axios");
 const cors = require("cors");
 
 require("dotenv").config();
-console.log("SUPABASE_URL:", process.env.SUPABASE_URL);
-console.log("TEM KEY:", !!process.env.SUPABASE_KEY);
-console.log("TEM WOOVI:", !!process.env.WOOVI_API_ID);
+console.log("ENV KEYS:", Object.keys(process.env));
+
+console.log("SUPABASE_URL =", process.env.SUPABASE_URL);
+console.log("SUPABASE_KEY =", process.env.SUPABASE_KEY ? "OK" : "MISSING");
+console.log("WOOVI_API_ID =", process.env.WOOVI_API_ID ? "OK" : "MISSING");
 const { createClient } =
 require("@supabase/supabase-js");
 
