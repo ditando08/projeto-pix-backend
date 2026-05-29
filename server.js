@@ -93,8 +93,6 @@ const charge =
 
 try {
 
-  try {
-
   if (supabase) {
 
     const { data, error } = await supabase
