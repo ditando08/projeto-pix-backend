@@ -191,6 +191,26 @@ app.get("/consultar-pix", async (req, res) => {
   }
 });
 
+app.post("/webhook-woovi", async (req, res) => {
+
+  try {
+
+    console.log(
+      "WEBHOOK WOOVI:",
+      JSON.stringify(req.body, null, 2)
+    );
+
+    res.sendStatus(200);
+
+  } catch (e) {
+
+    console.log(e);
+
+    res.sendStatus(500);
+
+  }
+
+});
 
 const PORT = process.env.PORT || 3000;
 
