@@ -14,6 +14,7 @@ const API_ID = process.env.WOOVI_API_ID;
 app.post("/criar-pix", async (req, res) => {
 
   console.log(req.body);
+  console.log("TRACKING:", req.body);
 
   console.log("ROTA /criar-pix CHAMADA");
 
