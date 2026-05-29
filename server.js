@@ -95,7 +95,7 @@ try {
 
   if (supabase) {
 
-    await supabase
+    const { data, error } = await supabase
       .from("pix_pagamentos")
       .insert({
         paymentid: charge.correlationID,
@@ -107,19 +107,17 @@ try {
         status: "pendente"
       });
 
-    const { error } = await supabase
-  .from("pix_pagamentos")
-  .insert({
-    paymentid: charge.correlationID,
-    gclid: gclid || "",
-    acc: acc || "",
-    camp: camp || "",
-    mail: mail || "",
-    valor: charge.value,
-    status: "pendente"
-  });
+    console.log("SUPABASE DATA:", data);
+    console.log("SUPABASE ERROR:", error);
 
-console.log("SUPABASE RESULT:", error);
+  }
+
+} catch (e) {
+
+  console.log(
+    "ERRO SUPABASE COMPLETO:",
+    e
+  );
   }
 
 } catch (e) {
