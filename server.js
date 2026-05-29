@@ -89,17 +89,29 @@ const charge =
 
   if (supabase) {
 
-  await supabase
-    .from("pix_pagamentos")
-    .insert({
-      paymentid: charge.correlationID,
-      gclid: gclid || "",
-      acc: acc || "",
-      camp: camp || "",
-      mail: mail || "",
-      valor: charge.value,
-      status: "pendente"
-    });
+    await supabase
+      .from("pix_pagamentos")
+      .insert({
+        paymentid: charge.correlationID,
+        gclid: gclid || "",
+        acc: acc || "",
+        camp: camp || "",
+        mail: mail || "",
+        valor: charge.value,
+        status: "pendente"
+      });
+
+    console.log(
+      "PIX SALVO NO SUPABASE"
+    );
+  }
+
+} catch (e) {
+
+  console.log(
+    "ERRO SUPABASE:",
+    e.message
+  );
 
 }
       paymentid:
