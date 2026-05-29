@@ -82,8 +82,8 @@ const charge =
   try {
 
   await supabase
-    .from("pix_pagamentos")
-    .insert({
+  .from("pix_pagamentos")
+  .insert(...)
       paymentid:
         charge.correlationID,
 
