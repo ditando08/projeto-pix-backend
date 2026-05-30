@@ -252,6 +252,34 @@ app.post("/webhook-woovi", async (req, res) => {
 
 });
 
+app.get("/teste-google", async (req, res) => {
+
+  try {
+
+    const { data, error } = await supabase
+      .from("pix_pagamentos")
+      .select("*")
+      .eq("status", "pago")
+      .eq("conversion_sent", false)
+      .limit(1);
+
+    res.json({
+      success: true,
+      data,
+      error
+    });
+
+  } catch (e) {
+
+    res.json({
+      success: false,
+      error: e.message
+    });
+
+  }
+
+});
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
