@@ -1,6 +1,13 @@
+const { GoogleAdsApi } = require("google-ads-api");
 const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
+
+const client = new GoogleAdsApi({
+  client_id: process.env.GOOGLE_ADS_CLIENT_ID,
+  client_secret: process.env.GOOGLE_ADS_CLIENT_SECRET,
+  developer_token: process.env.GOOGLE_ADS_DEVELOPER_TOKEN
+});
 
 require("dotenv").config();
 console.log("ENV KEYS:", Object.keys(process.env));
@@ -159,6 +166,43 @@ res.json({
 
 app.get("/", (req, res) => {
   res.send("Backend online");
+});
+
+app.get("/listar-conversoes", async (req, res) => {
+
+  try {
+
+    const customer = client.Customer({
+      customer_id: "4252949966",
+      refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN,
+      login_customer_id:
+        process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID
+    });
+
+    const conversoes = await customer.query(`
+      SELECT
+        conversion_action.id,
+        conversion_action.name,
+        conversion_action.type,
+        conversion_action.status
+      FROM conversion_action
+    `);
+
+    res.json({
+      success: true,
+      conversoes
+    });
+
+  } catch (e) {
+
+    res.json({
+      success: false,
+      error: e.message,
+      details: e
+    });
+
+  }
+
 });
 
 app.get("/consultar-pix", async (req, res) => {
