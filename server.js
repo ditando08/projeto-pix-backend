@@ -302,6 +302,23 @@ app.get("/teste-google", async (req, res) => {
 
 });
 
+app.get("/teste-conversao", async (req, res) => {
+
+  const { data, error } = await supabase
+    .from("pix_pagamentos")
+    .select("*")
+    .eq("status", "pago")
+    .eq("conversion_sent", false)
+    .order("id", { ascending: false })
+    .limit(1);
+
+  res.json({
+    data,
+    error
+  });
+
+});
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
