@@ -44,7 +44,8 @@ app.post("/criar-pix", async (req, res) => {
   gclid,
   acc,
   camp,
-  mail
+  mail,
+  cid
 } = req.body;
 
 if (gclid || acc || camp || mail) {
@@ -98,14 +99,15 @@ try {
     const { data, error } = await supabase
       .from("pix_pagamentos")
       .insert({
-        paymentid: charge.correlationID,
-        gclid: gclid || "",
-        acc: acc || "",
-        camp: camp || "",
-        mail: mail || "",
-        valor: charge.value,
-        status: "pendente"
-      });
+  paymentid: charge.correlationID,
+  gclid: gclid || "",
+  acc: acc || "",
+  camp: camp || "",
+  mail: mail || "",
+  cid: cid || "",
+  valor: charge.value,
+  status: "pendente"
+});
 
     console.log("SUPABASE DATA:", data);
     console.log("SUPABASE ERROR:", error);
