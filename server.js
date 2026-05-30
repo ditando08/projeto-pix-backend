@@ -256,10 +256,10 @@ app.get("/teste-conta", async (req, res) => {
 
   const { data, error } = await supabase
     .from("google_ads_accounts")
-    .select("*");
+    .select("*")
+    .eq("cid", "4252949966");
 
   res.json({
-    count: data?.length,
     data,
     error
   });
