@@ -252,6 +252,31 @@ app.post("/webhook-woovi", async (req, res) => {
 
 });
 
+app.get("/teste-conta", async (req, res) => {
+
+  try {
+
+    const { data, error } = await supabase
+      .from("google_ads_accounts")
+      .select("*")
+      .eq("cid", "3727847870")
+      .single();
+
+    res.json({
+      data,
+      error
+    });
+
+  } catch (e) {
+
+    res.json({
+      error: e.message
+    });
+
+  }
+
+});
+
 app.get("/teste-google", async (req, res) => {
 
   try {
