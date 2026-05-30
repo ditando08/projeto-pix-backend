@@ -259,8 +259,17 @@ app.get("/teste-conta", async (req, res) => {
     .select("*");
 
   res.json({
+    count: data?.length,
     data,
     error
+  });
+
+});
+
+app.get("/teste-supabase", async (req, res) => {
+
+  res.json({
+    supabaseUrl: process.env.SUPABASE_URL
   });
 
 });
