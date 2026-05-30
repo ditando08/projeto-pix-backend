@@ -266,6 +266,18 @@ app.get("/teste-conta", async (req, res) => {
 
 });
 
+app.get("/teste-pagamento", async (req, res) => {
+
+  const { data } = await supabase
+    .from("pix_pagamentos")
+    .select("*")
+    .eq("id", 94)
+    .single();
+
+  res.json(data);
+
+});
+
 app.get("/teste-supabase", async (req, res) => {
 
   res.json({
