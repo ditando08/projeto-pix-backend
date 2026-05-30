@@ -168,6 +168,37 @@ app.get("/", (req, res) => {
   res.send("Backend online");
 });
 
+app.get("/teste-env-google", (req, res) => {
+
+  res.json({
+    client_id:
+      process.env.GOOGLE_ADS_CLIENT_ID
+        ? "OK"
+        : "MISSING",
+
+    client_secret:
+      process.env.GOOGLE_ADS_CLIENT_SECRET
+        ? "OK"
+        : "MISSING",
+
+    developer_token:
+      process.env.GOOGLE_ADS_DEVELOPER_TOKEN
+        ? "OK"
+        : "MISSING",
+
+    refresh_token:
+      process.env.GOOGLE_ADS_REFRESH_TOKEN
+        ? "OK"
+        : "MISSING",
+
+    login_customer_id:
+      process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID
+        ? "OK"
+        : "MISSING"
+  });
+
+});
+
 app.get("/listar-conversoes", async (req, res) => {
 
   try {
