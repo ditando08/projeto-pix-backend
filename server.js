@@ -52,7 +52,12 @@ app.post("/criar-pix", async (req, res) => {
   acc,
   camp,
   mail,
-  cid
+  cid,
+  utm_source,
+  utm_campaign,
+  utm_medium,
+  utm_content,
+  utm_term
 } = req.body;
 
 if (gclid || acc || camp || mail) {
@@ -114,6 +119,11 @@ try {
   cid: cid || "",
   valor: charge.value,
   status: "pendente"
+  utm_source: utm_source || "",
+utm_campaign: utm_campaign || "",
+utm_medium: utm_medium || "",
+utm_content: utm_content || "",
+utm_term: utm_term || "",
 });
 
     console.log("SUPABASE DATA:", data);
