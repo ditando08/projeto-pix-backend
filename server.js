@@ -490,6 +490,14 @@ res.sendStatus(200);
 
 });
 
+app.get("/teste-utmify", (req, res) => {
+  res.json({
+    token: process.env.UTMIFY_API_TOKEN
+      ? "OK"
+      : "MISSING"
+  });
+});
+
 app.get("/teste-webhook", (req, res) => {
   console.log("TESTE WEBHOOK FUNCIONOU");
   res.send("OK");
