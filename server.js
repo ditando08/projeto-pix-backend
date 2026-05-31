@@ -289,41 +289,191 @@ app.post("/webhook-woovi", async (req, res) => {
     );
 
     if (
-      req.body.event ===
-      "OPENPIX:CHARGE_COMPLETED"
-    ) {
+  req.body.event ===
+  "OPENPIX:CHARGE_COMPLETED"
+) {
 
-      const correlationID =
-        req.body.charge?.correlationID;
+  const correlationID =
+    req.body.charge?.correlationID;
 
-      const paidAt =
-        req.body.charge?.paidAt ||
-        new Date().toISOString();
+  const paidAt =
+    req.body.charge?.paidAt ||
+    new Date().toISOString();
 
-      console.log(
-        "PIX PAGO:",
+  console.log(
+    "PIX PAGO:",
+    correlationID
+  );
+
+  const { error } = await supabase
+    .from("pix_pagamentos")
+    .update({
+      status: "pago",
+      paid_at: paidAt
+    })
+    .eq(
+      "paymentid",
+      correlationID
+    );
+
+  console.log(
+    "UPDATE ERROR:",
+    error
+  );
+
+  const { data: pagamento } =
+    await supabase
+      .from("pix_pagamentos")
+      .select("*")
+      .eq(
+        "paymentid",
         correlationID
-      );
+      )
+      .single();
 
-      const { error } = await supabase
-        .from("pix_pagamentos")
-        .update({
-          status: "pago",
-          paid_at: paidAt
-        })
-        .eq(
-          "paymentid",
-          correlationID
+  console.log(
+    "PAGAMENTO:",
+    pagamento
+  );
+
+  if (pagamento) {
+
+    try {
+
+      const utmify =
+        await axios.post(
+          "https://api.utmify.com.br/api-credentials/orders",
+          {
+            orderId: correlationID,
+
+            platform: "Woovi",
+
+            paymentMethod: "pix",
+
+            status: "paid",
+
+            createdAt:
+              pagamento.created_at
+                ?.replace("T", " ")
+                ?.substring(0, 19),
+
+            approvedDate:
+              paidAt
+                ?.replace("T", " ")
+                ?.substring(0, 19),
+
+            refundedAt: null,
+
+            customer: {
+              name: "Doador",
+              email:
+                "doacao@site.com",
+              phone:
+                "11999999999",
+              document:
+                "11144477735"
+            },
+
+            products: [
+              {
+                id: "cantinho",
+
+                name: "Doacao",
+
+                planId: null,
+
+                planName: null,
+
+                quantity: 1,
+
+                priceInCents:
+                  pagamento.valor
+              }
+            ],
+
+            trackingParameters: {
+              src: null,
+
+              sck: null,
+
+              utm_source:
+                pagamento.utm_source ||
+                null,
+
+              utm_campaign:
+                pagamento.utm_campaign ||
+                null,
+
+              utm_medium:
+                pagamento.utm_medium ||
+                null,
+
+              utm_content:
+                pagamento.utm_content ||
+                null,
+
+              utm_term:
+                pagamento.utm_term ||
+                null
+            },
+
+            commission: {
+              totalPriceInCents:
+                pagamento.valor,
+
+              gatewayFeeInCents: 0,
+
+              userCommissionInCents:
+                pagamento.valor
+            }
+          },
+          {
+            headers: {
+              "x-api-token":
+                process.env
+                  .UTMIFY_API_TOKEN
+            }
+          }
         );
 
       console.log(
-        "UPDATE ERROR:",
-        error
+        "UTMIFY:",
+        utmify.data
+      );
+
+    } catch (e) {
+
+      console.log(
+        "ERRO UTMIFY:",
+        e.response?.data ||
+        e.message
       );
 
     }
 
-    res.sendStatus(200);
+}
+
+}
+
+const { error } = await supabase
+  .from("pix_pagamentos")
+  .update({
+    status: "pago",
+    paid_at: paidAt
+  })
+  .eq(
+    "paymentid",
+    correlationID
+  );
+
+console.log(
+  "UPDATE ERROR:",
+  error
+);
+
+}
+
+res.sendStatus(200);
 
   } catch (e) {
 
