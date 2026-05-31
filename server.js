@@ -498,6 +498,10 @@ app.get("/teste-utmify", (req, res) => {
   });
 });
 
+app.get("/env-keys", (req, res) => {
+  res.json(Object.keys(process.env));
+});
+
 app.get("/teste-webhook", (req, res) => {
   console.log("TESTE WEBHOOK FUNCIONOU");
   res.send("OK");
