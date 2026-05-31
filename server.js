@@ -118,12 +118,13 @@ try {
   mail: mail || "",
   cid: cid || "",
   valor: charge.value,
-  status: "pendente"
+  status: "pendente",
+
   utm_source: utm_source || "",
-utm_campaign: utm_campaign || "",
-utm_medium: utm_medium || "",
-utm_content: utm_content || "",
-utm_term: utm_term || "",
+  utm_campaign: utm_campaign || "",
+  utm_medium: utm_medium || "",
+  utm_content: utm_content || "",
+  utm_term: utm_term || ""
 });
 
     console.log("SUPABASE DATA:", data);
