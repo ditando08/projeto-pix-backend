@@ -312,6 +312,12 @@ app.post("/webhook-woovi", async (req, res) => {
     "PIX PAGO:",
     correlationID
   );
+  console.log(
+  "TOKEN UTMIFY:",
+  process.env.UTMIFY_API_TOKEN
+    ? "OK"
+    : "MISSING"
+);
 
   const { error } = await supabase
     .from("pix_pagamentos")
