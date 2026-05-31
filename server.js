@@ -281,8 +281,13 @@ app.get("/consultar-pix", async (req, res) => {
 
 app.post("/webhook-woovi", async (req, res) => {
 
-  console.log("=== WEBHOOK RECEBIDO ===");
-  console.log(req.body);
+  console.log("########################");
+  console.log("WEBHOOK WOOVI RECEBIDO");
+  console.log("EVENTO:", req.body?.event);
+  console.log("CORRELATION:",
+    req.body?.charge?.correlationID
+  );
+  console.log("########################");
 
   try {
 
