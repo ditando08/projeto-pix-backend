@@ -470,6 +470,11 @@ res.sendStatus(200);
 
 });
 
+app.get("/teste-webhook", (req, res) => {
+  console.log("TESTE WEBHOOK FUNCIONOU");
+  res.send("OK");
+});
+
 app.get("/teste-conta", async (req, res) => {
 
   const { data, error } = await supabase
