@@ -281,6 +281,9 @@ app.get("/consultar-pix", async (req, res) => {
 
 app.post("/webhook-woovi", async (req, res) => {
 
+  console.log("=== WEBHOOK RECEBIDO ===");
+  console.log(req.body);
+
   try {
 
     console.log(
