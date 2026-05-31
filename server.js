@@ -455,24 +455,6 @@ app.post("/webhook-woovi", async (req, res) => {
 
 }
 
-const { error } = await supabase
-  .from("pix_pagamentos")
-  .update({
-    status: "pago",
-    paid_at: paidAt
-  })
-  .eq(
-    "paymentid",
-    correlationID
-  );
-
-console.log(
-  "UPDATE ERROR:",
-  error
-);
-
-}
-
 res.sendStatus(200);
 
   } catch (e) {
