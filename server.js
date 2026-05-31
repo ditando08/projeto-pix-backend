@@ -15,6 +15,12 @@ console.log("ENV KEYS:", Object.keys(process.env));
 console.log("SUPABASE_URL =", process.env.SUPABASE_URL);
 console.log("SUPABASE_KEY =", process.env.SUPABASE_KEY ? "OK" : "MISSING");
 console.log("WOOVI_API_ID =", process.env.WOOVI_API_ID ? "OK" : "MISSING");
+console.log(
+  "UTMIFY_API_TOKEN =",
+  process.env.UTMIFY_API_TOKEN
+    ? "OK"
+    : "MISSING"
+);
 const { createClient } =
 require("@supabase/supabase-js");
 
