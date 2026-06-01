@@ -434,7 +434,9 @@ app.post("/webhook-woovi", async (req, res) => {
 
               utm_term:
                 pagamento.utm_term ||
-                null
+                null,
+
+              gclid: pagamento.gclid || null  
             },
 
             commission: {
