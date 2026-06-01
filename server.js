@@ -55,6 +55,7 @@ app.post("/criar-pix", async (req, res) => {
     const {
   amount,
   gclid,
+  leadId,
   acc,
   camp,
   mail,
@@ -65,6 +66,8 @@ app.post("/criar-pix", async (req, res) => {
   utm_content,
   utm_term
 } = req.body;
+
+console.log("LEAD ID RECEBIDO:", leadId);
 
 if (gclid || acc || camp || mail) {
   console.log("TRACKING OK");
