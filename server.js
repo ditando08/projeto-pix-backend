@@ -422,6 +422,9 @@ app.post("/webhook-woovi", async (req, res) => {
 
               sck: null,
 
+              leadId:
+                pagamento.leadid || null,
+
               utm_source:
                 pagamento.utm_source ||
                 null,
