@@ -366,6 +366,13 @@ app.post("/webhook-woovi", async (req, res) => {
 
     try {
 
+      console.log("ENVIANDO PARA UTMIFY:", {
+  leadId: pagamento.leadid,
+  gclid: pagamento.gclid,
+  utm_source: pagamento.utm_source,
+  utm_campaign: pagamento.utm_campaign
+});
+
       const utmify =
         await axios.post(
           "https://api.utmify.com.br/api-credentials/orders",
