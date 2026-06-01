@@ -124,6 +124,7 @@ try {
       .insert({
   paymentid: charge.correlationID,
   gclid: gclid || "",
+  leadid: leadId || "",
   acc: acc || "",
   camp: camp || "",
   mail: mail || "",
