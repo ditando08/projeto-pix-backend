@@ -265,30 +265,37 @@ app.get("/consultar-pix", async (req, res) => {
 
     const id = req.query.id;
 
-    const response = await axios.get(
-      `https://api.woovi.com/api/v1/charge/${id}`,
-      {
-        headers: {
-          Authorization: API_ID
-        }
-      }
-    );
+    const { data, error } = await supabase
+      .from("pix_pagamentos")
+      .select("status")
+      .eq("paymentid", id)
+      .single();
 
-    const charge = response.data;
+    console.log(
+      "CONSULTA STATUS:",
+      id,
+      data
+    );
 
     res.json({
       success: true,
-      isPaid: charge.status === "COMPLETED"
+      isPaid: data?.status === "pago"
     });
 
   } catch (e) {
 
-    console.log(e.response?.data || e.message);
+    console.log(
+      "ERRO CONSULTA:",
+      e
+    );
 
     res.json({
-      success: false
+      success: false,
+      isPaid: false
     });
+
   }
+
 });
 
 app.post("/webhook-woovi", async (req, res) => {
