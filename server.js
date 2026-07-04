@@ -139,6 +139,8 @@ try {
   utm_medium: utm_medium || "",
   utm_content: utm_content || "",
   utm_term: utm_term || ""
+  produto: produto || "",
+  produtoid: produtoId || "",
 });
 
   produto: produto || "",
