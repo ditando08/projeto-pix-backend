@@ -141,6 +141,9 @@ try {
   utm_term: utm_term || ""
 });
 
+  produto: produto || "",
+  produtoid: produtoId || "",
+
     console.log("SUPABASE DATA:", data);
     console.log("SUPABASE ERROR:", error);
 
