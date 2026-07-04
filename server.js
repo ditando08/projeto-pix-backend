@@ -56,6 +56,8 @@ app.post("/criar-pix", async (req, res) => {
   amount,
   gclid,
   leadId,
+  produto,
+  produtoId,
   acc,
   camp,
   mail,
@@ -416,9 +418,9 @@ app.post("/webhook-woovi", async (req, res) => {
 
             products: [
               {
-                id: "cantinho",
+                id: pagamento.produtoid || "produto",
 
-                name: "Doacao",
+                name: pagamento.produto || "Doação",
 
                 planId: null,
 
