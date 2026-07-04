@@ -138,16 +138,14 @@ try {
   utm_campaign: utm_campaign || "",
   utm_medium: utm_medium || "",
   utm_content: utm_content || "",
-  utm_term: utm_term || ""
+  utm_term: utm_term || "",
+
   produto: produto || "",
-  produtoid: produtoId || "",
+  produtoid: produtoId || ""
 });
 
-  produto: produto || "",
-  produtoid: produtoId || "",
-
-    console.log("SUPABASE DATA:", data);
-    console.log("SUPABASE ERROR:", error);
+console.log("SUPABASE DATA:", data);
+console.log("SUPABASE ERROR:", error);
 
   }   // <- fecha o if
 
