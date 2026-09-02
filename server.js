@@ -1,40 +1,16 @@
-const { GoogleAdsApi } = require("google-ads-api");
 const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
 
-const client = new GoogleAdsApi({
-  client_id: process.env.GOOGLE_ADS_CLIENT_ID,
-  client_secret: process.env.GOOGLE_ADS_CLIENT_SECRET,
-  developer_token: process.env.GOOGLE_ADS_DEVELOPER_TOKEN
-});
-
 require("dotenv").config();
-console.log("ENV KEYS:", Object.keys(process.env));
-
-console.log("SUPABASE_URL =", process.env.SUPABASE_URL);
-console.log("SUPABASE_KEY =", process.env.SUPABASE_KEY ? "OK" : "MISSING");
-console.log("WOOVI_API_ID =", process.env.WOOVI_API_ID ? "OK" : "MISSING");
-console.log(
-  "UTMIFY_API_TOKEN =",
-  process.env.UTMIFY_API_TOKEN
-    ? "OK"
-    : "MISSING"
-);
 const { createClient } =
 require("@supabase/supabase-js");
 
-let supabase = null;
-
-if (
-  process.env.SUPABASE_URL &&
+const supabase =
+createClient(
+  process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY
-) {
-  supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_KEY
-  );
-}
+);
 
 const app = express();
 
@@ -53,36 +29,23 @@ app.post("/criar-pix", async (req, res) => {
   try {
 
     const {
-  amount,
-  gclid,
-  leadId,
-  produto,
-  produtoId,
-  acc,
-  camp,
-  mail,
-  cid,
-  utm_source,
-  utm_campaign,
-  utm_medium,
-  utm_content,
-  utm_term
-} = req.body;
+      amount,
+      gclid,
+      acc,
+      camp,
+      mail
+    } = req.body;
 
-console.log(req.body);
+    if (gclid || acc || camp || mail) {
+      console.log("TRACKING OK");
+    }
 
-console.log("LEAD ID RECEBIDO:", leadId);
-
-if (gclid || acc || camp || mail) {
-  console.log("TRACKING OK");
-}
-
-console.log("TRACKING:", {
-  gclid,
-  acc,
-  camp,
-  mail
-});
+    console.log("TRACKING:", {
+      gclid,
+      acc,
+      camp,
+      mail
+    });
 
     const response = await axios.post(
       "https://api.woovi.com/api/v1/charge",
@@ -94,90 +57,89 @@ console.log("TRACKING:", {
         comment: "Doacao Site",
 
         customer: {
-  name: "Doador",
-  email: "doacao@site.com",
-  phone: "11999999999",
-  taxID: "11144477735"
-}
+          name: "Doador",
+          email: "doacao@site.com",
+          phone: "11999999999",
+          taxID: "11144477735"
+        }
       },
       {
-  headers: {
-  "Content-Type": "application/json",
-  Authorization: API_ID
-}
-}
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: API_ID
+        }
+      }
     );
 
     console.log(response.data);
 
     console.log("WOOVI RESPONSE:", response.data);
 
-const charge =
-  response.data?.charge ||
-  response.data?.charges?.[0] ||
-  response.data;
+    const charge =
+      response.data?.charge ||
+      response.data?.charges?.[0] ||
+      response.data;
 
-try {
+    try {
 
-  if (supabase) {
+      await supabase
+        .from("pix_pagamentos")
+        .insert({
+          paymentid:
+            charge.correlationID,
 
-    const { data, error } = await supabase
-      .from("pix_pagamentos")
-      .insert({
-  paymentid: charge.correlationID,
-  gclid: gclid || "",
-  leadid: leadId || "",
-  acc: acc || "",
-  camp: camp || "",
-  mail: mail || "",
-  cid: cid || "",
-  valor: charge.value,
-  status: "pendente",
+          gclid:
+            gclid || "",
 
-  utm_source: utm_source || "",
-  utm_campaign: utm_campaign || "",
-  utm_medium: utm_medium || "",
-  utm_content: utm_content || "",
-  utm_term: utm_term || "",
+          acc:
+            acc || "",
 
-  produto: produto || "",
-  produtoid: produtoId || ""
-});
+          camp:
+            camp || "",
 
-console.log("SUPABASE DATA:", data);
-console.log("SUPABASE ERROR:", error);
+          mail:
+            mail || "",
 
-  }   // <- fecha o if
+          valor:
+            charge.value,
 
-} catch (e) {
+          status:
+            "pendente"
+        });
 
-  console.log(
-    "ERRO SUPABASE COMPLETO:",
-    e
-  );
+      console.log(
+        "PIX SALVO NO SUPABASE"
+      );
 
-}
+    } catch (e) {
 
-console.log("CHARGE FINAL:", charge);
+      console.log(
+        "ERRO SUPABASE:",
+        e.message
+      );
 
-res.json({
-  paymentId:
-    charge.correlationID ||
-    charge._id ||
-    "",
+    }
 
-  qrCode:
-    charge.brCode || "",
+    console.log("CHARGE FINAL:", charge);
 
-  brCode:
-    charge.brCode || "",
+    res.json({
+      paymentId:
+        charge.correlationID ||
+        charge._id ||
+        "",
 
-  qrCodeImage:
-    charge.qrCodeImage || "",
+      qrCode:
+        charge.brCode || "",
 
-  amount:
-    charge.value || 0
-});
+      brCode:
+        charge.brCode || "",
+
+      qrCodeImage:
+        charge.qrCodeImage || "",
+
+      amount:
+        charge.value || 0
+    });
 
   } catch (error) {
 
@@ -192,77 +154,180 @@ res.json({
   }
 });
 
+
+/*
+ * PIX AUTOMÁTICO — rota separada.
+ * Não altera /criar-pix nem /consultar-pix, portanto o Pix único continua
+ * exatamente no fluxo anterior.
+ */
+app.post("/criar-pix-automatico", async (req, res) => {
+  console.log("ROTA /criar-pix-automatico CHAMADA");
+
+  try {
+    const {
+      amount_cents,
+      name,
+      cpf,
+      lead_id,
+      correlation_id,
+      campaign,
+      contract,
+    } = req.body || {};
+
+    const value = Number(amount_cents);
+    const cleanCpf = String(cpf || "").replace(/\D/g, "");
+    const cleanName = String(name || "").trim();
+
+    if (!Number.isInteger(value) || value <= 0) {
+      return res.status(400).json({
+        success: false,
+        erro: "Valor da doação inválido"
+      });
+    }
+
+    if (!cleanName) {
+      return res.status(400).json({
+        success: false,
+        erro: "Nome obrigatório"
+      });
+    }
+
+    if (!/^\d{11}$/.test(cleanCpf)) {
+      return res.status(400).json({
+        success: false,
+        erro: "CPF inválido"
+      });
+    }
+
+    const correlationID = String(
+      correlation_id || lead_id || `pixauto_${Date.now()}`
+    ).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
+
+    const comment = String(contract || "Doacao mensal").slice(0, 29);
+
+    /*
+     * A documentação atual da Woovi exige address para PIX_RECURRING.
+     * Não vamos inventar endereço do pagador. Enviamos somente os dados reais
+     * coletados (nome + CPF); se a conta/API exigir address, a Woovi retornará
+     * a validação e isso poderá ser ajustado de forma transparente.
+     */
+    const subscriptionPayload = {
+      name: "Pix Automatico",
+      value,
+      customer: {
+        name: cleanName,
+        taxID: cleanCpf
+      },
+      correlationID,
+      comment,
+      frequency: "MONTHLY",
+      type: "PIX_RECURRING",
+      pixRecurringOptions: {
+        journey: "PAYMENT_ON_APPROVAL",
+        retryPolicy: "THREE_RETRIES_7_DAYS"
+      },
+      dayGenerateCharge: new Date().toISOString(),
+      dayDue: 3
+    };
+
+    console.log("WOOVI PIX AUTOMATIC PAYLOAD:", {
+      ...subscriptionPayload,
+      customer: { name: cleanName, taxID: "[CPF]" }
+    });
+
+    const response = await axios.post(
+      "https://api.woovi.com/api/v1/subscriptions",
+      subscriptionPayload,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: API_ID
+        }
+      }
+    );
+
+    const subscription =
+      response.data?.subscription || response.data;
+
+    const recurring =
+      subscription?.pixRecurring || {};
+
+    const emv =
+      recurring?.emv ||
+      response.data?.emv ||
+      "";
+
+    const subscriptionId =
+      subscription?.globalID ||
+      subscription?.correlationID ||
+      correlationID;
+
+    /*
+     * Tracking é best-effort:
+     * erro no Supabase não impede o QR de aparecer.
+     */
+    try {
+      await supabase
+        .from("pix_pagamentos")
+        .insert({
+          paymentid: subscriptionId,
+          gclid: "",
+          acc: "",
+          camp: campaign || "",
+          mail: "",
+          valor: value,
+          status: "pendente"
+        });
+
+    } catch (e) {
+
+      console.log(
+        "ERRO SUPABASE PIX AUTO:",
+        e.message
+      );
+
+    }
+
+    return res.json({
+      success: true,
+      paymentId: subscriptionId,
+      subscriptionId,
+      correlationID:
+        subscription?.correlationID ||
+        correlationID,
+      qrCode: emv,
+      brCode: emv,
+      emv,
+      qrCodeImage: "",
+      amount: value,
+      pixRecurring: recurring
+    });
+
+  } catch (error) {
+
+    console.log(
+      "ERRO WOOVI PIX AUTOMATICO:",
+      error.response?.data ||
+      error.message
+    );
+
+    return res.status(
+      error.response?.status || 500
+    ).json({
+      success: false,
+      erro: "Erro ao criar Pix Automático",
+      detalhe:
+        error.response?.data ||
+        undefined
+    });
+  }
+});
+
+
 app.get("/", (req, res) => {
   res.send("Backend online");
 });
 
-app.get("/teste-env-google", (req, res) => {
-
-  res.json({
-    client_id:
-      process.env.GOOGLE_ADS_CLIENT_ID
-        ? "OK"
-        : "MISSING",
-
-    client_secret:
-      process.env.GOOGLE_ADS_CLIENT_SECRET
-        ? "OK"
-        : "MISSING",
-
-    developer_token:
-      process.env.GOOGLE_ADS_DEVELOPER_TOKEN
-        ? "OK"
-        : "MISSING",
-
-    refresh_token:
-      process.env.GOOGLE_ADS_REFRESH_TOKEN
-        ? "OK"
-        : "MISSING",
-
-    login_customer_id:
-      process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID
-        ? "OK"
-        : "MISSING"
-  });
-
-});
-
-app.get("/listar-conversoes", async (req, res) => {
-
-  try {
-
-    const customer = client.Customer({
-      customer_id: "4252949966",
-      refresh_token: process.env.GOOGLE_ADS_REFRESH_TOKEN,
-      login_customer_id:
-        process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID
-    });
-
-    const conversoes = await customer.query(`
-      SELECT
-        conversion_action.id,
-        conversion_action.name,
-        conversion_action.type,
-        conversion_action.status
-      FROM conversion_action
-    `);
-
-    res.json({
-      success: true,
-      conversoes
-    });
-
-  } catch (e) {
-
-    res.json({
-      success: false,
-      error: e.message,
-      details: e
-    });
-
-  }
-
-});
 
 app.get("/consultar-pix", async (req, res) => {
 
@@ -270,354 +335,41 @@ app.get("/consultar-pix", async (req, res) => {
 
     const id = req.query.id;
 
-    const { data, error } = await supabase
-      .from("pix_pagamentos")
-      .select("status")
-      .eq("paymentid", id)
-      .single();
-
-    console.log(
-      "CONSULTA STATUS:",
-      id,
-      data
+    const response = await axios.get(
+      `https://api.woovi.com/api/v1/charge/${id}`,
+      {
+        headers: {
+          Authorization: API_ID
+        }
+      }
     );
+
+    const charge = response.data;
 
     res.json({
       success: true,
-      isPaid: data?.status === "pago"
+      isPaid:
+        charge.status === "COMPLETED"
     });
 
   } catch (e) {
 
     console.log(
-      "ERRO CONSULTA:",
-      e
+      e.response?.data ||
+      e.message
     );
 
     res.json({
-      success: false,
-      isPaid: false
+      success: false
     });
-
   }
-
 });
 
-app.post("/webhook-woovi", async (req, res) => {
-
-  console.log("########################");
-  console.log("WEBHOOK WOOVI RECEBIDO");
-  console.log("EVENTO:", req.body?.event);
-  console.log("CORRELATION:",
-    req.body?.charge?.correlationID
-  );
-  console.log("########################");
-
-  try {
-
-    console.log(
-      "WEBHOOK:",
-      JSON.stringify(req.body, null, 2)
-    );
-
-    if (
-  req.body.event ===
-  "OPENPIX:CHARGE_COMPLETED"
-) {
-
-  const correlationID =
-    req.body.charge?.correlationID;
-
-  const paidAt =
-    req.body.charge?.paidAt ||
-    new Date().toISOString();
-
-  console.log(
-    "PIX PAGO:",
-    correlationID
-  );
-  console.log(
-  "TOKEN UTMIFY:",
-  process.env.UTMIFY_API_TOKEN
-    ? "OK"
-    : "MISSING"
-);
-
-  const { error } = await supabase
-    .from("pix_pagamentos")
-    .update({
-      status: "pago",
-      paid_at: paidAt
-    })
-    .eq(
-      "paymentid",
-      correlationID
-    );
-
-  console.log(
-    "UPDATE ERROR:",
-    error
-  );
-
-  const { data: pagamento } =
-    await supabase
-      .from("pix_pagamentos")
-      .select("*")
-      .eq(
-        "paymentid",
-        correlationID
-      )
-      .single();
-
-  console.log(
-    "PAGAMENTO:",
-    pagamento
-  );
-
-  if (pagamento) {
-
-    try {
-
-      console.log("ENVIANDO PARA UTMIFY:", {
-  leadId: pagamento.leadid,
-  gclid: pagamento.gclid,
-  utm_source: pagamento.utm_source,
-  utm_campaign: pagamento.utm_campaign
-});
-
-      const utmify =
-        await axios.post(
-          "https://api.utmify.com.br/api-credentials/orders",
-          {
-            orderId: correlationID,
-
-            platform: "Woovi",
-
-            paymentMethod: "pix",
-
-            status: "paid",
-
-            createdAt:
-              pagamento.created_at
-                ?.replace("T", " ")
-                ?.substring(0, 19),
-
-            approvedDate:
-              paidAt
-                ?.replace("T", " ")
-                ?.substring(0, 19),
-
-            refundedAt: null,
-
-            customer: {
-              name: "Doador",
-              email:
-                "doacao@site.com",
-              phone:
-                "11999999999",
-              document:
-                "11144477735"
-            },
-
-            products: [
-              {
-                id: pagamento.produtoid || "produto",
-
-                name: pagamento.produto || "Doação",
-
-                planId: null,
-
-                planName: null,
-
-                quantity: 1,
-
-                priceInCents:
-                  pagamento.valor
-              }
-            ],
-
-            trackingParameters: {
-              src: null,
-
-              sck: null,
-
-              leadId:
-                pagamento.leadid || null,
-
-              utm_source:
-                pagamento.utm_source ||
-                null,
-
-              utm_campaign:
-                pagamento.utm_campaign ||
-                null,
-
-              utm_medium:
-                pagamento.utm_medium ||
-                null,
-
-              utm_content:
-                pagamento.utm_content ||
-                null,
-
-              utm_term:
-                pagamento.utm_term ||
-                null,
-
-              gclid: pagamento.gclid || null  
-            },
-
-            commission: {
-              totalPriceInCents:
-                pagamento.valor,
-
-              gatewayFeeInCents: 0,
-
-              userCommissionInCents:
-                pagamento.valor
-            }
-          },
-          {
-            headers: {
-              "x-api-token":
-                process.env
-                  .UTMIFY_API_TOKEN
-            }
-          }
-        );
-
-      console.log(
-        "UTMIFY:",
-        utmify.data
-      );
-
-    } catch (e) {
-
-      console.log(
-        "ERRO UTMIFY:",
-        e.response?.data ||
-        e.message
-      );
-
-    }
-
-}
-
-}
-
-res.sendStatus(200);
-
-  } catch (e) {
-
-    console.log(
-      "ERRO WEBHOOK:",
-      e
-    );
-
-    res.sendStatus(500);
-
-  }
-
-});
-
-app.get("/teste-utmify", (req, res) => {
-  res.json({
-    token: process.env.UTMIFY_API_TOKEN
-      ? "OK"
-      : "MISSING"
-  });
-});
-
-app.get("/env-keys", (req, res) => {
-  res.json(Object.keys(process.env));
-});
-
-app.get("/teste-webhook", (req, res) => {
-  console.log("TESTE WEBHOOK FUNCIONOU");
-  res.send("OK");
-});
-
-app.get("/teste-conta", async (req, res) => {
-
-  const { data, error } = await supabase
-    .from("google_ads_accounts")
-    .select("*")
-    .eq("cid", "4252949966");
-
-  res.json({
-    data,
-    error
-  });
-
-});
-
-app.get("/teste-pagamento", async (req, res) => {
-
-  const { data } = await supabase
-    .from("pix_pagamentos")
-    .select("*")
-    .eq("id", 94)
-    .single();
-
-  res.json(data);
-
-});
-
-app.get("/teste-supabase", async (req, res) => {
-
-  res.json({
-    supabaseUrl: process.env.SUPABASE_URL
-  });
-
-});
-
-app.get("/teste-google", async (req, res) => {
-
-  try {
-
-    const { data, error } = await supabase
-      .from("pix_pagamentos")
-      .select("*")
-      .eq("status", "pago")
-      .eq("conversion_sent", false)
-      .limit(1);
-
-    res.json({
-      success: true,
-      data,
-      error
-    });
-
-  } catch (e) {
-
-    res.json({
-      success: false,
-      error: e.message
-    });
-
-  }
-
-});
-
-app.get("/teste-conversao", async (req, res) => {
-
-  const { data, error } = await supabase
-    .from("pix_pagamentos")
-    .select("*")
-    .eq("status", "pago")
-    .eq("conversion_sent", false)
-    .order("id", { ascending: false })
-    .limit(1);
-
-  res.json({
-    data,
-    error
-  });
-
-});
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log("Servidor rodando na porta " + PORT);
+  console.log(
+    "Servidor rodando na porta " + PORT
+  );
 });
