@@ -69,22 +69,35 @@ app.post("/criar-pix", async (req, res) => {
   try {
 
     const {
-      amount,
-      amount_cents,
-      gclid,
-      leadId,
-      produto,
-      produtoId,
-      acc,
-      camp,
-      mail,
-      cid,
-      utm_source,
-      utm_campaign,
-      utm_medium,
-      utm_content,
-      utm_term
-    } = req.body;
+  amount,
+  amount_cents,
+
+  // Compatibilidade com projetos antigos e novo HTML
+  leadId: leadIdOld,
+  lead_id: leadIdNew,
+
+  gclid,
+  produto,
+  produtoId,
+
+  acc,
+
+  camp: campOld,
+  campaign: campaignNew,
+
+  mail,
+  cid,
+
+  utm_source,
+  utm_campaign,
+  utm_medium,
+  utm_content,
+  utm_term
+} = req.body;
+
+// Mantém compatibilidade entre projetos antigos e o novo projeto
+const leadId = leadIdOld || leadIdNew || "";
+const camp = campOld || campaignNew || "";
 
     /*
      * Compatibilidade retroativa:
@@ -235,25 +248,39 @@ app.post("/criar-pix", async (req, res) => {
 
 
     res.json({
+  success: true,
 
-      paymentId:
-        charge.correlationID ||
-        charge._id ||
-        "",
+  paymentId:
+    charge.correlationID ||
+    charge._id ||
+    "",
 
-      qrCode:
-        charge.brCode || "",
+  charge_id:
+    charge.correlationID ||
+    charge._id ||
+    "",
 
-      brCode:
-        charge.brCode || "",
+  txid:
+    charge.correlationID ||
+    charge._id ||
+    "",
 
-      qrCodeImage:
-        charge.qrCodeImage || "",
+  correlationID:
+    charge.correlationID ||
+    "",
 
-      amount:
-        charge.value || 0
+  qrCode:
+    charge.brCode || "",
 
-    });
+  brCode:
+    charge.brCode || "",
+
+  qrCodeImage:
+    charge.qrCodeImage || "",
+
+  amount:
+    charge.value || 0
+});
 
 
   } catch (error) {
