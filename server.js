@@ -70,6 +70,7 @@ app.post("/criar-pix", async (req, res) => {
 
     const {
       amount,
+      amount_cents,
       gclid,
       leadId,
       produto,
@@ -85,7 +86,26 @@ app.post("/criar-pix", async (req, res) => {
       utm_term
     } = req.body;
 
+    /*
+     * Compatibilidade retroativa:
+     * - Projetos antigos continuam enviando `amount`.
+     * - O novo projeto pode enviar `amount_cents`.
+     * Ambos representam centavos.
+     *
+     * A prioridade é `amount_cents` quando presente.
+     */
+    const rawAmount =
+      amount_cents !== undefined &&
+      amount_cents !== null &&
+      amount_cents !== ""
+        ? amount_cents
+        : amount;
+
+    const valueInCents = Number(rawAmount);
+
     console.log(req.body);
+    console.log("VALOR RECEBIDO:", rawAmount);
+    console.log("VALOR EM CENTAVOS:", valueInCents);
 
     console.log("LEAD ID RECEBIDO:", leadId);
 
@@ -100,13 +120,18 @@ app.post("/criar-pix", async (req, res) => {
       mail
     });
 
+    if (!Number.isInteger(valueInCents) || valueInCents <= 0) {
+      return res.status(400).json({
+        erro: "Valor do PIX inválido"
+      });
+    }
 
     const response = await axios.post(
       "https://api.woovi.com/api/v1/charge",
       {
         correlationID: "cantb_" + Date.now(),
 
-        value: Number(amount),
+        value: valueInCents,
 
         comment: "Doacao Site",
 
