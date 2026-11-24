@@ -718,6 +718,19 @@ async function confirmarPagamentoNitro(transactionId, paidAt) {
   return true;
 }
 
+function cpfValido(valor) {
+  const cpf = String(valor || "").replace(/\D/g, "");
+  if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
+
+  for (let t = 9; t < 11; t++) {
+    let soma = 0;
+    for (let p = 0; p < t; p++) soma += Number(cpf[p]) * (t + 1 - p);
+    if ((soma * 10) % 11 % 10 !== Number(cpf[t])) return false;
+  }
+
+  return true;
+}
+
 async function consultarTransacaoNitro(transactionId) {
   const response = await axios.get(
     `${NITRO_API_URL}/transactions/${encodeURIComponent(transactionId)}`,
@@ -759,6 +772,38 @@ app.post("/api/pix-nitro", async (req, res) => {
       });
     }
 
+    /* A Nitro exige o documento real do comprador. */
+    const cliente = body.cliente || {};
+    const clienteNome = String(cliente.nome || "")
+      .trim()
+      .replace(/\s+/g, " ")
+      .slice(0, 80);
+    const clienteCpf = String(cliente.cpf || "").replace(/\D/g, "");
+    const clienteEmail = String(cliente.email || "").trim().slice(0, 120);
+
+    if (clienteNome.length < 3) {
+      return res.status(400).json({
+        success: false,
+        error: "Informe seu nome completo."
+      });
+    }
+
+    if (!cpfValido(clienteCpf)) {
+      return res.status(400).json({
+        success: false,
+        error: "CPF inválido. Confira os números digitados."
+      });
+    }
+
+    const customer = {
+      name: clienteNome,
+      document: clienteCpf
+    };
+
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clienteEmail)) {
+      customer.email = clienteEmail;
+    }
+
     const pedidoId =
       "lari_" +
       Date.now() +
@@ -783,12 +828,7 @@ app.post("/api/pix-nitro", async (req, res) => {
           tangible: false
         }
       ],
-      customer: {
-        name: "Doador",
-        email: "doacao@site.com",
-        document: "11144477735",
-        phone: "11999999999"
-      },
+      customer,
       metadata: {
         order_id: pedidoId,
         product_id: "lari"
@@ -885,9 +925,24 @@ app.post("/api/pix-nitro", async (req, res) => {
       error.response?.data || error.message
     );
 
+    /* Recusa de validação da Nitro (ex.: documento inválido):
+       repassa a mensagem para o doador poder corrigir. */
+    const status = error.response?.status;
+    const mensagemNitro = error.response?.data?.error;
+
+    if (status === 400 || status === 422) {
+      return res.status(400).json({
+        success: false,
+        error:
+          typeof mensagemNitro === "string" && mensagemNitro
+            ? mensagemNitro
+            : "Não foi possível gerar o Pix. Confira seus dados."
+      });
+    }
+
     return res.status(502).json({
       success: false,
-      error: "Erro ao gerar PIX"
+      error: "Erro ao gerar PIX. Tente novamente."
     });
   }
 });
