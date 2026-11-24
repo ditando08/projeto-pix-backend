@@ -29,6 +29,13 @@ console.log(
 );
 
 console.log(
+  "NITRO_KEYS =",
+  process.env.NITRO_PUBLIC_KEY && process.env.NITRO_SECRET_KEY
+    ? "OK"
+    : "MISSING"
+);
+
+console.log(
   "UTMIFY_API_TOKEN =",
   process.env.UTMIFY_API_TOKEN ? "OK" : "MISSING"
 );
@@ -297,6 +304,684 @@ const camp = campOld || campaignNew || "";
 
   }
 
+});
+
+
+/* =========================================================
+ * PROJETO 5 — PIX WOOVI
+ * =========================================================
+ *
+ * Rotas exclusivas do Projeto 5.
+ * Não substituem nem alteram:
+ *   - /criar-pix
+ *   - /consultar-pix
+ *   - /criar-pix-automatico
+ *   - /webhook-woovi
+ *
+ * O frontend do Projeto 5 usa:
+ *   POST /api/pix-mateus
+ *   GET  /api/monitorar-mateus/:transactionId
+ *
+ * ========================================================= */
+
+app.post("/api/pix-mateus", async (req, res) => {
+  console.log("ROTA /api/pix-mateus CHAMADA");
+
+  try {
+    const body = req.body || {};
+    const valorCents = Number(body.valor_campanha_cents);
+    const utmParams = body.utm_params || {};
+
+    const gclid = String(utmParams.gclid || "");
+    const fbclid = String(utmParams.fbclid || "");
+    const utm_source = String(utmParams.utm_source || "");
+    const utm_campaign = String(utmParams.utm_campaign || "");
+    const utm_medium = String(utmParams.utm_medium || "");
+    const utm_content = String(utmParams.utm_content || "");
+    const utm_term = String(utmParams.utm_term || "");
+    const leadId = String(utmParams.leadId || utmParams.lead_id || "");
+    const landing_url = String(utmParams.landing_url || "");
+
+    if (!Number.isInteger(valorCents) || valorCents <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Valor do PIX inválido"
+      });
+    }
+
+    const correlationID =
+      "projeto5_" +
+      Date.now() +
+      "_" +
+      Math.random().toString(36).slice(2, 8);
+
+    const response = await axios.post(
+      "https://api.woovi.com/api/v1/charge",
+      {
+        correlationID,
+        value: valorCents,
+        comment: "Doacao Projeto 5",
+        customer: {
+          name: "Doador",
+          email: "doacao@site.com",
+          phone: "11999999999",
+          taxID: "11144477735"
+        }
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: API_ID
+        }
+      }
+    );
+
+    const charge =
+      response.data?.charge ||
+      response.data?.charges?.[0] ||
+      response.data;
+
+    const paymentId =
+      charge?.correlationID ||
+      correlationID;
+
+    const qrcodeText =
+      charge?.brCode ||
+      charge?.qrCode ||
+      "";
+
+    if (!paymentId || !qrcodeText) {
+      console.log("WOOVI PROJETO 5 RESPOSTA INCOMPLETA:", response.data);
+
+      return res.status(502).json({
+        success: false,
+        error: "A Woovi não retornou o código Pix esperado"
+      });
+    }
+
+    /* Tracking é salvo junto com a cobrança do Projeto 5.
+       Essas colunas já são utilizadas pelo webhook compartilhado. */
+    try {
+      if (supabase) {
+        const { error } = await supabase
+          .from("pix_pagamentos")
+          .insert({
+            paymentid: paymentId,
+            gclid: gclid || "",
+            leadid: leadId || "",
+            acc: "",
+            camp: utm_campaign || "",
+            mail: "",
+            cid: "",
+            valor: Number(charge?.value ?? valorCents),
+            status: "pendente",
+            utm_source: utm_source || "",
+            utm_campaign: utm_campaign || "",
+            utm_medium: utm_medium || "",
+            utm_content: utm_content || "",
+            utm_term: utm_term || "",
+            produto: "Projeto 5",
+            produtoid: "projeto-5"
+          });
+
+        if (error) {
+          console.log("SUPABASE PROJETO 5 ERROR:", error);
+        }
+      }
+    } catch (e) {
+      console.log("ERRO SUPABASE PROJETO 5:", e.message);
+    }
+
+    console.log("PIX PROJETO 5 CRIADO:", {
+      paymentId,
+      valor: charge?.value ?? valorCents,
+      hasGclid: !!gclid,
+      hasFbclid: !!fbclid
+    });
+
+    return res.json({
+      success: true,
+      transaction_id: paymentId,
+      paymentId,
+      qrcode_text: qrcodeText,
+      brCode: qrcodeText,
+      qrCode: qrcodeText,
+      qrcode: charge?.qrcode || "",
+      qrCodeImage: charge?.qrCodeImage || "",
+      amount: Number(charge?.value ?? valorCents)
+    });
+  } catch (error) {
+    console.log(
+      "ERRO WOOVI PROJETO 5:",
+      error.response?.data || error.message
+    );
+
+    return res.status(error.response?.status || 500).json({
+      success: false,
+      error: "Erro ao gerar PIX"
+    });
+  }
+});
+
+
+app.get("/api/monitorar-mateus/:transactionId", async (req, res) => {
+  const transactionId = String(req.params.transactionId || "");
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders?.();
+
+  let finalizado = false;
+
+  const enviar = (payload) => {
+    if (finalizado || res.writableEnded) return;
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  const consultar = async () => {
+    try {
+      if (!supabase) {
+        enviar({
+          status: "error",
+          error: "Supabase não configurado"
+        });
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("pix_pagamentos")
+        .select("status")
+        .eq("paymentid", transactionId)
+        .single();
+
+      if (error) {
+        return;
+      }
+
+      if (data?.status === "pago") {
+        finalizado = true;
+        enviar({
+          status: "paid",
+          transaction_id: transactionId
+        });
+
+        clearInterval(intervalo);
+        clearTimeout(timeout);
+        setTimeout(() => res.end(), 50);
+      } else {
+        enviar({
+          status: "pending",
+          transaction_id: transactionId
+        });
+      }
+    } catch (e) {
+      console.log("ERRO MONITOR PROJETO 5:", e.message);
+    }
+  };
+
+  enviar({
+    status: "pending",
+    transaction_id: transactionId
+  });
+
+  const intervalo = setInterval(consultar, 2000);
+  const timeout = setTimeout(() => {
+    if (finalizado || res.writableEnded) return;
+
+    finalizado = true;
+    enviar({
+      status: "timeout",
+      transaction_id: transactionId
+    });
+
+    clearInterval(intervalo);
+    res.end();
+  }, 30 * 60 * 1000);
+
+  req.on("close", () => {
+    finalizado = true;
+    clearInterval(intervalo);
+    clearTimeout(timeout);
+  });
+
+  consultar();
+});
+
+
+/* =========================================================
+ * NITRO PAGAMENTOS — PIX (projeto Lari)
+ * =========================================================
+ *
+ * Doc: https://doc.nitropagamentoshub.com
+ *
+ * Rotas:
+ *   POST /api/pix-nitro            cria a cobrança PIX na Nitro
+ *   GET  /consultar-pix-nitro?id=  status (Supabase + consulta na Nitro)
+ *   POST /webhook-nitro            postbackUrl chamado pela Nitro
+ *
+ * Variáveis de ambiente:
+ *   NITRO_PUBLIC_KEY   chave pública  (pk_...)
+ *   NITRO_SECRET_KEY   chave privada  (sk_...)
+ *   PUBLIC_BACKEND_URL (opcional) URL pública deste backend, usada
+ *                      para montar o postbackUrl. Ex.:
+ *                      https://projeto-pix-backend-production.up.railway.app
+ *
+ * As rotas da Woovi continuam intactas para os outros projetos.
+ * ========================================================= */
+
+const NITRO_API_URL = "https://api.nitropagamento.app";
+
+function nitroHeaders() {
+  const credenciais = Buffer.from(
+    `${process.env.NITRO_PUBLIC_KEY || ""}:${process.env.NITRO_SECRET_KEY || ""}`
+  ).toString("base64");
+
+  return {
+    Authorization: `Basic ${credenciais}`,
+    "Content-Type": "application/json"
+  };
+}
+
+function nitroConfigurada() {
+  return !!(process.env.NITRO_PUBLIC_KEY && process.env.NITRO_SECRET_KEY);
+}
+
+function urlPublicaBackend(req) {
+  const base =
+    process.env.PUBLIC_BACKEND_URL ||
+    `https://${req.get("host")}`;
+
+  return base.replace(/\/+$/, "");
+}
+
+function urlHttpValida(valor) {
+  try {
+    const u = new URL(String(valor || ""));
+    return u.protocol === "http:" || u.protocol === "https:" ? u.href : "";
+  } catch (e) {
+    return "";
+  }
+}
+
+/* Converte datas da Nitro ("2025-01-07T08:51:18-03:00" ou
+   "2025-10-08 19:51:18", horário de Brasília) para o formato UTC
+   "YYYY-MM-DD HH:MM:SS" usado pela UTMify. */
+function dataNitro(valor) {
+  let d = null;
+
+  if (valor) {
+    let s = String(valor).trim();
+
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) {
+      s = s.replace(" ", "T") + "-03:00";
+    }
+
+    d = new Date(s);
+  }
+
+  if (!d || isNaN(d.getTime())) d = new Date();
+
+  return d;
+}
+
+function dataUtcUtmify(valor) {
+  return dataNitro(valor).toISOString().replace("T", " ").substring(0, 19);
+}
+
+async function enviarUtmifyNitro(pagamento, orderId, paidAt) {
+  try {
+    const utmify = await axios.post(
+      "https://api.utmify.com.br/api-credentials/orders",
+      {
+        orderId,
+        platform: "NitroPagamentos",
+        paymentMethod: "pix",
+        status: "paid",
+        createdAt: dataUtcUtmify(pagamento.created_at),
+        approvedDate: dataUtcUtmify(paidAt),
+        refundedAt: null,
+        customer: {
+          name: "Doador",
+          email: "doacao@site.com",
+          phone: "11999999999",
+          document: "11144477735"
+        },
+        products: [
+          {
+            id: pagamento.produtoid || "produto",
+            name: pagamento.produto || "Doação",
+            planId: null,
+            planName: null,
+            quantity: 1,
+            priceInCents: pagamento.valor
+          }
+        ],
+        trackingParameters: {
+          src: null,
+          sck: null,
+          leadId: pagamento.leadid || null,
+          utm_source: pagamento.utm_source || null,
+          utm_campaign: pagamento.utm_campaign || null,
+          utm_medium: pagamento.utm_medium || null,
+          utm_content: pagamento.utm_content || null,
+          utm_term: pagamento.utm_term || null,
+          gclid: pagamento.gclid || null
+        },
+        commission: {
+          totalPriceInCents: pagamento.valor,
+          gatewayFeeInCents: 0,
+          userCommissionInCents: pagamento.valor
+        }
+      },
+      {
+        headers: {
+          "x-api-token": process.env.UTMIFY_API_TOKEN
+        }
+      }
+    );
+
+    console.log("UTMIFY NITRO:", utmify.data);
+  } catch (e) {
+    console.log("ERRO UTMIFY NITRO:", e.response?.data || e.message);
+  }
+}
+
+/* Marca como pago no Supabase só uma vez (idempotente) e, apenas
+   nessa primeira vez, envia a venda para a UTMify. Assim webhook e
+   consulta de status podem confirmar sem duplicar a conversão. */
+async function confirmarPagamentoNitro(transactionId, paidAt) {
+  if (!supabase || !transactionId) return false;
+
+  const { data: atualizados, error } = await supabase
+    .from("pix_pagamentos")
+    .update({
+      status: "pago",
+      paid_at: dataNitro(paidAt).toISOString()
+    })
+    .eq("paymentid", transactionId)
+    .neq("status", "pago")
+    .select("*");
+
+  if (error) {
+    console.log("ERRO UPDATE NITRO:", error);
+    return false;
+  }
+
+  const pagamento = atualizados?.[0];
+
+  if (pagamento) {
+    console.log("PIX NITRO PAGO:", transactionId);
+    await enviarUtmifyNitro(pagamento, transactionId, paidAt);
+  }
+
+  return true;
+}
+
+async function consultarTransacaoNitro(transactionId) {
+  const response = await axios.get(
+    `${NITRO_API_URL}/transactions/${encodeURIComponent(transactionId)}`,
+    { headers: nitroHeaders(), timeout: 30000 }
+  );
+
+  return response.data?.data || null;
+}
+
+
+app.post("/api/pix-nitro", async (req, res) => {
+  console.log("ROTA /api/pix-nitro CHAMADA");
+
+  try {
+    if (!nitroConfigurada()) {
+      console.log("NITRO_PUBLIC_KEY / NITRO_SECRET_KEY ausentes");
+      return res.status(500).json({
+        success: false,
+        error: "Gateway de pagamento não configurado"
+      });
+    }
+
+    const body = req.body || {};
+    const valorCents = Number(body.valor_campanha_cents);
+    const utmParams = body.utm_params || {};
+
+    const gclid = String(utmParams.gclid || "");
+    const utm_source = String(utmParams.utm_source || "");
+    const utm_campaign = String(utmParams.utm_campaign || "");
+    const utm_medium = String(utmParams.utm_medium || "");
+    const utm_content = String(utmParams.utm_content || "");
+    const utm_term = String(utmParams.utm_term || "");
+    const leadId = String(utmParams.leadId || utmParams.lead_id || "");
+
+    if (!Number.isInteger(valorCents) || valorCents <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Valor do PIX inválido"
+      });
+    }
+
+    const pedidoId =
+      "lari_" +
+      Date.now() +
+      "_" +
+      Math.random().toString(36).slice(2, 8);
+
+    const sourceUrl =
+      urlHttpValida(utmParams.landing_url) ||
+      urlHttpValida(req.get("referer")) ||
+      urlHttpValida(req.get("origin")) ||
+      "https://avancecomlari.com/";
+
+    const payload = {
+      amount: valorCents / 100,
+      payment_method: "pix",
+      description: "Doacao Lari",
+      items: [
+        {
+          title: "Doacao Lari",
+          unitPrice: valorCents,
+          quantity: 1,
+          tangible: false
+        }
+      ],
+      customer: {
+        name: "Doador",
+        email: "doacao@site.com",
+        document: "11144477735",
+        phone: "11999999999"
+      },
+      metadata: {
+        order_id: pedidoId,
+        product_id: "lari"
+      },
+      postbackUrl: `${urlPublicaBackend(req)}/webhook-nitro`,
+      tracking: {
+        src: utm_source || undefined,
+        utm_source: utm_source || undefined,
+        utm_medium: utm_medium || undefined,
+        utm_campaign: utm_campaign || undefined,
+        utm_term: utm_term || undefined,
+        utm_content: utm_content || undefined
+      },
+      source_url: sourceUrl,
+      source_label: "Campanha Lari"
+    };
+
+    const response = await axios.post(NITRO_API_URL, payload, {
+      headers: nitroHeaders(),
+      timeout: 30000
+    });
+
+    const transacao = response.data?.data || {};
+    const paymentId = String(transacao.id || "");
+    const qrcodeText = String(transacao.pix_code || "");
+
+    if (!response.data?.success || !paymentId || !qrcodeText) {
+      console.log("NITRO RESPOSTA INCOMPLETA:", response.data);
+
+      return res.status(502).json({
+        success: false,
+        error: "A Nitro não retornou o código Pix esperado"
+      });
+    }
+
+    let qrCodeImage = String(transacao.pix_qr_code || "");
+    if (qrCodeImage && !qrCodeImage.startsWith("data:")) {
+      qrCodeImage = "data:image/png;base64," + qrCodeImage;
+    }
+
+    try {
+      if (supabase) {
+        const { error } = await supabase
+          .from("pix_pagamentos")
+          .insert({
+            paymentid: paymentId,
+            gclid: gclid || "",
+            leadid: leadId || "",
+            acc: "",
+            camp: utm_campaign || "",
+            mail: "",
+            cid: "",
+            valor: valorCents,
+            status: "pendente",
+            utm_source: utm_source || "",
+            utm_campaign: utm_campaign || "",
+            utm_medium: utm_medium || "",
+            utm_content: utm_content || "",
+            utm_term: utm_term || "",
+            produto: "Lari",
+            produtoid: "lari"
+          });
+
+        if (error) {
+          console.log("SUPABASE NITRO ERROR:", error);
+        }
+      }
+    } catch (e) {
+      console.log("ERRO SUPABASE NITRO:", e.message);
+    }
+
+    console.log("PIX NITRO CRIADO:", {
+      paymentId,
+      pedidoId,
+      valorCents,
+      hasGclid: !!gclid
+    });
+
+    return res.json({
+      success: true,
+      transaction_id: paymentId,
+      paymentId,
+      qrcode_text: qrcodeText,
+      brCode: qrcodeText,
+      qrCode: qrcodeText,
+      qrCodeImage,
+      amount: valorCents,
+      expires_at: transacao.expires_at || null
+    });
+  } catch (error) {
+    console.log(
+      "ERRO NITRO PIX:",
+      error.response?.status,
+      error.response?.data || error.message
+    );
+
+    return res.status(502).json({
+      success: false,
+      error: "Erro ao gerar PIX"
+    });
+  }
+});
+
+
+app.get("/consultar-pix-nitro", async (req, res) => {
+  const id = String(req.query.id || "");
+
+  if (!id) {
+    return res.status(400).json({ success: false, isPaid: false });
+  }
+
+  try {
+    if (!supabase) {
+      return res.status(500).json({
+        success: false,
+        isPaid: false,
+        error: "Supabase não configurado"
+      });
+    }
+
+    const { data } = await supabase
+      .from("pix_pagamentos")
+      .select("status")
+      .eq("paymentid", id)
+      .single();
+
+    if (!data) {
+      return res.json({ success: true, isPaid: false });
+    }
+
+    if (data.status === "pago") {
+      return res.json({ success: true, isPaid: true });
+    }
+
+    /* Se o webhook ainda não chegou, confirma direto na Nitro. */
+    if (nitroConfigurada()) {
+      try {
+        const transacao = await consultarTransacaoNitro(id);
+
+        if (transacao?.status === "pago") {
+          await confirmarPagamentoNitro(id, transacao.paid_at);
+          return res.json({ success: true, isPaid: true });
+        }
+      } catch (e) {
+        console.log(
+          "ERRO CONSULTA NITRO:",
+          e.response?.data || e.message
+        );
+      }
+    }
+
+    return res.json({ success: true, isPaid: false });
+  } catch (e) {
+    console.log("ERRO CONSULTA PIX NITRO:", e.message);
+    return res.json({ success: false, isPaid: false });
+  }
+});
+
+
+app.post("/webhook-nitro", async (req, res) => {
+  const evento = req.body?.event;
+  const transactionId = String(req.body?.data?.transaction_id || "");
+
+  console.log("WEBHOOK NITRO RECEBIDO:", evento, transactionId);
+
+  try {
+    if (evento !== "transaction.paid" || !transactionId) {
+      return res.status(200).json({ status: "ignored" });
+    }
+
+    /* A Nitro não assina o webhook: antes de marcar como pago,
+       confirma o status direto na API com as nossas credenciais. */
+    const transacao = await consultarTransacaoNitro(transactionId);
+
+    if (transacao?.status !== "pago") {
+      console.log(
+        "WEBHOOK NITRO NÃO CONFIRMADO NA API:",
+        transactionId,
+        transacao?.status
+      );
+      return res.status(200).json({ status: "not_paid" });
+    }
+
+    await confirmarPagamentoNitro(
+      transactionId,
+      req.body?.data?.paid_at || transacao.paid_at
+    );
+
+    return res.status(200).json({ status: "received" });
+  } catch (e) {
+    console.log("ERRO WEBHOOK NITRO:", e.response?.data || e.message);
+    return res.sendStatus(500);
+  }
 });
 
 
