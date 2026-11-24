@@ -781,6 +781,11 @@ app.post("/api/pix-nitro", async (req, res) => {
     const clienteCpf = String(cliente.cpf || "").replace(/\D/g, "");
     const clienteEmail = String(cliente.email || "").trim().slice(0, 120);
 
+    let clienteTelefone = String(cliente.telefone || "").replace(/\D/g, "");
+    if (clienteTelefone.length > 11 && clienteTelefone.startsWith("55")) {
+      clienteTelefone = clienteTelefone.slice(2);
+    }
+
     if (clienteNome.length < 3) {
       return res.status(400).json({
         success: false,
@@ -795,9 +800,22 @@ app.post("/api/pix-nitro", async (req, res) => {
       });
     }
 
+    /* Celular é obrigatório na Nitro: DDD + 8 ou 9 dígitos. */
+    if (
+      !/^[1-9][1-9]\d{8,9}$/.test(clienteTelefone) ||
+      (clienteTelefone.length === 11 && clienteTelefone[2] !== "9") ||
+      /^(\d)\1+$/.test(clienteTelefone.slice(2))
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: "Celular inválido. Informe DDD + número."
+      });
+    }
+
     const customer = {
       name: clienteNome,
-      document: clienteCpf
+      document: clienteCpf,
+      phone: clienteTelefone
     };
 
     if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clienteEmail)) {
