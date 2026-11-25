@@ -36,6 +36,16 @@ console.log(
 );
 
 console.log(
+  "EFI_KEYS =",
+  process.env.EFI_CLIENT_ID &&
+    process.env.EFI_CLIENT_SECRET &&
+    process.env.EFI_CERT_BASE64 &&
+    process.env.EFI_PIX_KEY
+    ? "OK"
+    : "MISSING"
+);
+
+console.log(
   "UTMIFY_API_TOKEN =",
   process.env.UTMIFY_API_TOKEN ? "OK" : "MISSING"
 );
@@ -595,13 +605,39 @@ function urlPublicaBackend(req) {
   return base.replace(/\/+$/, "");
 }
 
+/* Só origem + caminho (sem ?gclid=... nem #), para não mandar
+   uma URL gigante de anúncio no source_url da Nitro. */
 function urlHttpValida(valor) {
   try {
     const u = new URL(String(valor || ""));
-    return u.protocol === "http:" || u.protocol === "https:" ? u.href : "";
+    if (u.protocol !== "http:" && u.protocol !== "https:") return "";
+    return (u.origin + u.pathname).slice(0, 255);
   } catch (e) {
     return "";
   }
+}
+
+/* Resumo do pedido para o log, sem expor dados pessoais. */
+function resumoPedidoNitro(payload) {
+  const c = payload.customer || {};
+  const cpf = String(c.document || "");
+  const email = String(c.email || "");
+  const tel = String(c.phone || "");
+  const arroba = email.indexOf("@");
+
+  return {
+    amount: payload.amount,
+    customer: {
+      name_len: String(c.name || "").length,
+      name_partes: String(c.name || "").split(" ").filter(Boolean).length,
+      document: cpf ? cpf.slice(0, 3) + "******" + cpf.slice(-2) : "",
+      email: arroba > 0 ? email[0] + "***" + email.slice(arroba) : "",
+      phone: tel ? tel.slice(0, 2) + "*****" + tel.slice(-2) : ""
+    },
+    postbackUrl: payload.postbackUrl,
+    source_url: payload.source_url,
+    tracking: payload.tracking
+  };
 }
 
 /* Converte datas da Nitro ("2025-01-07T08:51:18-03:00" ou
@@ -629,13 +665,13 @@ function dataUtcUtmify(valor) {
   return dataNitro(valor).toISOString().replace("T", " ").substring(0, 19);
 }
 
-async function enviarUtmifyNitro(pagamento, orderId, paidAt) {
+async function enviarUtmifyNitro(pagamento, orderId, paidAt, platform = "NitroPagamentos") {
   try {
     const utmify = await axios.post(
       "https://api.utmify.com.br/api-credentials/orders",
       {
         orderId,
-        platform: "NitroPagamentos",
+        platform,
         paymentMethod: "pix",
         status: "paid",
         createdAt: dataUtcUtmify(pagamento.created_at),
@@ -690,7 +726,7 @@ async function enviarUtmifyNitro(pagamento, orderId, paidAt) {
 /* Marca como pago no Supabase só uma vez (idempotente) e, apenas
    nessa primeira vez, envia a venda para a UTMify. Assim webhook e
    consulta de status podem confirmar sem duplicar a conversão. */
-async function confirmarPagamentoNitro(transactionId, paidAt) {
+async function confirmarPagamentoNitro(transactionId, paidAt, platform = "NitroPagamentos") {
   if (!supabase || !transactionId) return false;
 
   const { data: atualizados, error } = await supabase
@@ -711,8 +747,8 @@ async function confirmarPagamentoNitro(transactionId, paidAt) {
   const pagamento = atualizados?.[0];
 
   if (pagamento) {
-    console.log("PIX NITRO PAGO:", transactionId);
-    await enviarUtmifyNitro(pagamento, transactionId, paidAt);
+    console.log("PIX PAGO:", platform, transactionId);
+    await enviarUtmifyNitro(pagamento, transactionId, paidAt, platform);
   }
 
   return true;
@@ -743,6 +779,8 @@ async function consultarTransacaoNitro(transactionId) {
 
 app.post("/api/pix-nitro", async (req, res) => {
   console.log("ROTA /api/pix-nitro CHAMADA");
+
+  let pedidoParaLog = null;
 
   try {
     if (!nitroConfigurada()) {
@@ -860,16 +898,18 @@ app.post("/api/pix-nitro", async (req, res) => {
       },
       postbackUrl: `${urlPublicaBackend(req)}/webhook-nitro`,
       tracking: {
-        src: utm_source || undefined,
-        utm_source: utm_source || undefined,
-        utm_medium: utm_medium || undefined,
-        utm_campaign: utm_campaign || undefined,
-        utm_term: utm_term || undefined,
-        utm_content: utm_content || undefined
+        src: utm_source.slice(0, 100) || undefined,
+        utm_source: utm_source.slice(0, 100) || undefined,
+        utm_medium: utm_medium.slice(0, 100) || undefined,
+        utm_campaign: utm_campaign.slice(0, 100) || undefined,
+        utm_term: utm_term.slice(0, 100) || undefined,
+        utm_content: utm_content.slice(0, 100) || undefined
       },
       source_url: sourceUrl,
       source_label: "Campanha Lari"
     };
+
+    pedidoParaLog = resumoPedidoNitro(payload);
 
     const response = await axios.post(NITRO_API_URL, payload, {
       headers: nitroHeaders(),
@@ -949,6 +989,18 @@ app.post("/api/pix-nitro", async (req, res) => {
       error.response?.status,
       error.response?.data || error.message
     );
+
+    if (pedidoParaLog) {
+      console.log(
+        "PEDIDO ENVIADO A NITRO:",
+        new Date().toISOString(),
+        JSON.stringify({
+          ...pedidoParaLog,
+          cf_ray: error.response?.headers?.["cf-ray"] || null,
+          request_id: error.response?.headers?.["x-request-id"] || null
+        })
+      );
+    }
 
     /* Recusa de validação da Nitro (ex.: documento inválido):
        repassa a mensagem para o doador poder corrigir. */
@@ -1063,6 +1115,386 @@ app.post("/webhook-nitro", async (req, res) => {
     return res.sendStatus(500);
   }
 });
+
+
+/* =========================================================
+ * EFÍ BANK — PIX (projeto Lari)
+ * =========================================================
+ *
+ * Doc: https://dev.efipay.com.br/docs/api-pix
+ *
+ * Rotas (mesmo formato de pedido/resposta das rotas Nitro):
+ *   POST /api/pix-efi            cria a cobrança imediata (cob)
+ *   GET  /consultar-pix-efi?id=  status (Supabase + consulta na Efí)
+ *
+ * Sem webhook: a Efí exige mTLS no servidor do webhook, o que a
+ * Railway não oferece. Em vez disso, o backend confere a cada
+ * minuto os Pix Efí pendentes das últimas 3 horas, e o site
+ * consulta o status a cada 3s enquanto está aberto.
+ *
+ * Variáveis de ambiente:
+ *   EFI_CLIENT_ID       Client_Id da aplicação (Produção)
+ *   EFI_CLIENT_SECRET   Client_Secret da aplicação (Produção)
+ *   EFI_CERT_BASE64     certificado .p12 da Efí convertido em base64
+ *   EFI_PIX_KEY         chave Pix cadastrada na conta Efí
+ *   EFI_CERT_PASSWORD   (opcional) senha do .p12, normalmente vazia
+ *   EFI_SANDBOX         (opcional) "true" para homologação
+ * ========================================================= */
+
+const https = require("https");
+
+const EFI_API_URL =
+  process.env.EFI_SANDBOX === "true"
+    ? "https://pix-h.api.efipay.com.br"
+    : "https://pix.api.efipay.com.br";
+
+let efiAgent = null;
+let efiToken = null;
+let efiTokenExpiraEm = 0;
+
+function efiConfigurada() {
+  return !!(
+    process.env.EFI_CLIENT_ID &&
+    process.env.EFI_CLIENT_SECRET &&
+    process.env.EFI_CERT_BASE64 &&
+    process.env.EFI_PIX_KEY
+  );
+}
+
+function efiHttpsAgent() {
+  if (!efiAgent) {
+    efiAgent = new https.Agent({
+      pfx: Buffer.from(
+        String(process.env.EFI_CERT_BASE64 || "").replace(/\s/g, ""),
+        "base64"
+      ),
+      passphrase: process.env.EFI_CERT_PASSWORD || "",
+      keepAlive: true
+    });
+  }
+  return efiAgent;
+}
+
+async function efiAccessToken() {
+  if (efiToken && Date.now() < efiTokenExpiraEm) return efiToken;
+
+  const credenciais = Buffer.from(
+    `${process.env.EFI_CLIENT_ID}:${process.env.EFI_CLIENT_SECRET}`
+  ).toString("base64");
+
+  const response = await axios.post(
+    `${EFI_API_URL}/oauth/token`,
+    { grant_type: "client_credentials" },
+    {
+      httpsAgent: efiHttpsAgent(),
+      headers: {
+        Authorization: `Basic ${credenciais}`,
+        "Content-Type": "application/json"
+      },
+      timeout: 30000
+    }
+  );
+
+  efiToken = response.data.access_token;
+  const validade = Number(response.data.expires_in) || 3600;
+  efiTokenExpiraEm = Date.now() + (validade - 60) * 1000;
+
+  return efiToken;
+}
+
+async function efiRequest(method, path, data) {
+  const token = await efiAccessToken();
+
+  try {
+    const response = await axios({
+      method,
+      url: `${EFI_API_URL}${path}`,
+      data,
+      httpsAgent: efiHttpsAgent(),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      timeout: 30000
+    });
+    return response.data;
+  } catch (e) {
+    /* Token revogado/expirado antes do previsto: renova e tenta 1x. */
+    if (e.response?.status === 401) {
+      efiToken = null;
+      const novoToken = await efiAccessToken();
+      const response = await axios({
+        method,
+        url: `${EFI_API_URL}${path}`,
+        data,
+        httpsAgent: efiHttpsAgent(),
+        headers: {
+          Authorization: `Bearer ${novoToken}`,
+          "Content-Type": "application/json"
+        },
+        timeout: 30000
+      });
+      return response.data;
+    }
+    throw e;
+  }
+}
+
+/* Consulta a cobrança na Efí e, se estiver paga (CONCLUIDA),
+   confirma no Supabase e envia para a UTMify (uma única vez). */
+async function verificarPagamentoEfi(txid) {
+  const cob = await efiRequest("get", `/v2/cob/${encodeURIComponent(txid)}`);
+
+  if (cob?.status !== "CONCLUIDA") return false;
+
+  const paidAt = cob.pix?.[0]?.horario || new Date().toISOString();
+  await confirmarPagamentoNitro(txid, paidAt, "EfiBank");
+
+  return true;
+}
+
+
+app.post("/api/pix-efi", async (req, res) => {
+  console.log("ROTA /api/pix-efi CHAMADA");
+
+  try {
+    if (!efiConfigurada()) {
+      console.log("Variáveis EFI_* ausentes");
+      return res.status(500).json({
+        success: false,
+        error: "Gateway de pagamento não configurado"
+      });
+    }
+
+    const body = req.body || {};
+    const valorCents = Number(body.valor_campanha_cents);
+    const utmParams = body.utm_params || {};
+
+    const gclid = String(utmParams.gclid || "");
+    const utm_source = String(utmParams.utm_source || "");
+    const utm_campaign = String(utmParams.utm_campaign || "");
+    const utm_medium = String(utmParams.utm_medium || "");
+    const utm_content = String(utmParams.utm_content || "");
+    const utm_term = String(utmParams.utm_term || "");
+    const leadId = String(utmParams.leadId || utmParams.lead_id || "");
+
+    if (!Number.isInteger(valorCents) || valorCents <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Valor do PIX inválido"
+      });
+    }
+
+    const cobranca = {
+      calendario: { expiracao: 3600 },
+      valor: { original: (valorCents / 100).toFixed(2) },
+      chave: process.env.EFI_PIX_KEY,
+      solicitacaoPagador: "Doacao Lari"
+    };
+
+    /* Na Efí os dados do pagador são opcionais. Se o site enviar
+       nome + CPF válidos, eles vão como "devedor" da cobrança. */
+    const cliente = body.cliente || {};
+    const clienteNome = String(cliente.nome || "")
+      .trim()
+      .replace(/\s+/g, " ")
+      .slice(0, 80);
+    const clienteCpf = String(cliente.cpf || "").replace(/\D/g, "");
+
+    if (clienteNome.length >= 3 && cpfValido(clienteCpf)) {
+      cobranca.devedor = { cpf: clienteCpf, nome: clienteNome };
+    }
+
+    const cob = await efiRequest("post", "/v2/cob", cobranca);
+
+    const txid = String(cob?.txid || "");
+    const qrcodeText = String(cob?.pixCopiaECola || "");
+
+    if (!txid || !qrcodeText) {
+      console.log("EFI RESPOSTA INCOMPLETA:", cob);
+      return res.status(502).json({
+        success: false,
+        error: "A Efí não retornou o código Pix esperado"
+      });
+    }
+
+    /* Imagem do QR Code (opcional: o copia e cola já basta). */
+    let qrCodeImage = "";
+    try {
+      if (cob.loc?.id) {
+        const qr = await efiRequest("get", `/v2/loc/${cob.loc.id}/qrcode`);
+        qrCodeImage = String(qr?.imagemQrcode || "");
+      }
+    } catch (e) {
+      console.log("ERRO QRCODE EFI:", e.response?.data || e.message);
+    }
+
+    try {
+      if (supabase) {
+        const { error } = await supabase
+          .from("pix_pagamentos")
+          .insert({
+            paymentid: txid,
+            gclid: gclid || "",
+            leadid: leadId || "",
+            acc: "",
+            camp: utm_campaign || "",
+            mail: "",
+            cid: "",
+            valor: valorCents,
+            status: "pendente",
+            utm_source: utm_source || "",
+            utm_campaign: utm_campaign || "",
+            utm_medium: utm_medium || "",
+            utm_content: utm_content || "",
+            utm_term: utm_term || "",
+            produto: "Lari",
+            produtoid: "lari-efi"
+          });
+
+        if (error) {
+          console.log("SUPABASE EFI ERROR:", error);
+        }
+      }
+    } catch (e) {
+      console.log("ERRO SUPABASE EFI:", e.message);
+    }
+
+    console.log("PIX EFI CRIADO:", {
+      txid,
+      valorCents,
+      comDevedor: !!cobranca.devedor,
+      hasGclid: !!gclid
+    });
+
+    return res.json({
+      success: true,
+      transaction_id: txid,
+      paymentId: txid,
+      qrcode_text: qrcodeText,
+      brCode: qrcodeText,
+      qrCode: qrcodeText,
+      qrCodeImage,
+      amount: valorCents
+    });
+  } catch (error) {
+    console.log(
+      "ERRO EFI PIX:",
+      new Date().toISOString(),
+      error.response?.status,
+      error.response?.data || error.message
+    );
+
+    const status = error.response?.status;
+    const mensagemEfi = error.response?.data?.mensagem;
+
+    if (status === 400) {
+      return res.status(400).json({
+        success: false,
+        error:
+          typeof mensagemEfi === "string" && mensagemEfi
+            ? mensagemEfi
+            : "Não foi possível gerar o Pix. Confira seus dados."
+      });
+    }
+
+    return res.status(502).json({
+      success: false,
+      error: "Erro ao gerar PIX. Tente novamente."
+    });
+  }
+});
+
+
+app.get("/consultar-pix-efi", async (req, res) => {
+  const id = String(req.query.id || "");
+
+  if (!id) {
+    return res.status(400).json({ success: false, isPaid: false });
+  }
+
+  try {
+    if (!supabase) {
+      return res.status(500).json({
+        success: false,
+        isPaid: false,
+        error: "Supabase não configurado"
+      });
+    }
+
+    const { data } = await supabase
+      .from("pix_pagamentos")
+      .select("status")
+      .eq("paymentid", id)
+      .single();
+
+    if (!data) {
+      return res.json({ success: true, isPaid: false });
+    }
+
+    if (data.status === "pago") {
+      return res.json({ success: true, isPaid: true });
+    }
+
+    if (efiConfigurada()) {
+      try {
+        if (await verificarPagamentoEfi(id)) {
+          return res.json({ success: true, isPaid: true });
+        }
+      } catch (e) {
+        console.log("ERRO CONSULTA EFI:", e.response?.data || e.message);
+      }
+    }
+
+    return res.json({ success: true, isPaid: false });
+  } catch (e) {
+    console.log("ERRO CONSULTA PIX EFI:", e.message);
+    return res.json({ success: false, isPaid: false });
+  }
+});
+
+
+/* Conferência periódica: confirma Pix Efí pagos mesmo que o
+   doador tenha fechado a página antes da confirmação. */
+let conferindoEfi = false;
+
+async function conferirPendentesEfi() {
+  if (conferindoEfi || !supabase || !efiConfigurada()) return;
+  conferindoEfi = true;
+
+  try {
+    const desde = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+
+    const { data: pendentes, error } = await supabase
+      .from("pix_pagamentos")
+      .select("paymentid")
+      .eq("produtoid", "lari-efi")
+      .eq("status", "pendente")
+      .gte("created_at", desde)
+      .limit(50);
+
+    if (error) {
+      console.log("ERRO LISTAR PENDENTES EFI:", error);
+      return;
+    }
+
+    for (const p of pendentes || []) {
+      try {
+        await verificarPagamentoEfi(p.paymentid);
+      } catch (e) {
+        console.log(
+          "ERRO CONFERIR EFI:",
+          p.paymentid,
+          e.response?.data || e.message
+        );
+      }
+    }
+  } finally {
+    conferindoEfi = false;
+  }
+}
+
+setInterval(conferirPendentesEfi, 60 * 1000);
 
 
 /* =========================================================
