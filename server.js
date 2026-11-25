@@ -812,15 +812,22 @@ app.post("/api/pix-nitro", async (req, res) => {
       });
     }
 
+    /* E-mail também é obrigatório na Nitro. */
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clienteEmail)) {
+      return res.status(400).json({
+        success: false,
+        error: clienteEmail
+          ? "E-mail inválido. Confira o endereço digitado."
+          : "Informe seu e-mail."
+      });
+    }
+
     const customer = {
       name: clienteNome,
+      email: clienteEmail,
       document: clienteCpf,
       phone: clienteTelefone
     };
-
-    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clienteEmail)) {
-      customer.email = clienteEmail;
-    }
 
     const pedidoId =
       "lari_" +
