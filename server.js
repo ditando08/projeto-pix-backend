@@ -665,7 +665,19 @@ function dataUtcUtmify(valor) {
   return dataNitro(valor).toISOString().replace("T", " ").substring(0, 19);
 }
 
+/* Envia a venda paga para a UTMify. Tenta até 3 vezes em falhas de
+   rede/servidor (5xx); erro de validação (4xx) não adianta repetir. */
 async function enviarUtmifyNitro(pagamento, orderId, paidAt, platform = "NitroPagamentos") {
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    const ok = await enviarUtmifyUmaVez(pagamento, orderId, paidAt, platform, tentativa);
+    if (ok !== "repetir") return ok === "ok";
+    await new Promise((r) => setTimeout(r, tentativa * 2000));
+  }
+  console.log("UTMIFY NAO ENVIADO APOS 3 TENTATIVAS:", platform, orderId);
+  return false;
+}
+
+async function enviarUtmifyUmaVez(pagamento, orderId, paidAt, platform, tentativa) {
   try {
     const utmify = await axios.post(
       "https://api.utmify.com.br/api-credentials/orders",
@@ -713,13 +725,24 @@ async function enviarUtmifyNitro(pagamento, orderId, paidAt, platform = "NitroPa
       {
         headers: {
           "x-api-token": process.env.UTMIFY_API_TOKEN
-        }
+        },
+        timeout: 20000
       }
     );
 
-    console.log("UTMIFY NITRO:", utmify.data);
+    console.log("UTMIFY:", platform, orderId, utmify.data);
+    return "ok";
   } catch (e) {
-    console.log("ERRO UTMIFY NITRO:", e.response?.data || e.message);
+    const status = e.response?.status;
+    console.log(
+      "ERRO UTMIFY:",
+      platform,
+      orderId,
+      `tentativa ${tentativa}`,
+      status,
+      e.response?.data || e.message
+    );
+    return status && status < 500 && status !== 429 ? "falhou" : "repetir";
   }
 }
 
@@ -1454,47 +1477,190 @@ app.get("/consultar-pix-efi", async (req, res) => {
 });
 
 
-/* Conferência periódica: confirma Pix Efí pagos mesmo que o
-   doador tenha fechado a página antes da confirmação. */
-let conferindoEfi = false;
+/* =========================================================
+ * CONCILIAÇÃO EFÍ
+ *
+ * Pergunta à Efí quais Pix foram RECEBIDOS num período
+ * (GET /v2/pix) e confirma cada um no Supabase + UTMify.
+ * Cobre quem pagou e fechou a página antes da confirmação.
+ *
+ * - A cada minuto: últimas 2 horas.
+ * - Ao iniciar o servidor: últimos 3 dias (recupera pagamentos
+ *   que ficaram de fora da UTMify antes desta correção).
+ * ========================================================= */
 
-async function conferirPendentesEfi() {
-  if (conferindoEfi || !supabase || !efiConfigurada()) return;
-  conferindoEfi = true;
+/* txids já resolvidos neste processo (evita consultar o Supabase
+   de novo a cada minuto para o mesmo Pix). */
+const efiTxidsResolvidos = new Set();
 
-  try {
-    const desde = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+async function efiListarPixRecebidos(inicio, fim) {
+  const lista = [];
 
-    const { data: pendentes, error } = await supabase
-      .from("pix_pagamentos")
-      .select("paymentid")
-      .eq("produtoid", "lari-efi")
-      .eq("status", "pendente")
-      .gte("created_at", desde)
-      .limit(50);
+  for (let pagina = 0; pagina < 100; pagina++) {
+    const params = new URLSearchParams({
+      inicio: inicio.toISOString(),
+      fim: fim.toISOString(),
+      "paginacao.paginaAtual": String(pagina),
+      "paginacao.itensPorPagina": "100"
+    });
 
-    if (error) {
-      console.log("ERRO LISTAR PENDENTES EFI:", error);
-      return;
+    const resposta = await efiRequest("get", `/v2/pix?${params}`);
+    lista.push(...(resposta?.pix || []));
+
+    const totalPaginas = Number(
+      resposta?.parametros?.paginacao?.quantidadeDePaginas || 1
+    );
+    if (pagina + 1 >= totalPaginas) break;
+  }
+
+  return lista;
+}
+
+async function registrarPixRecebidoEfi(pix) {
+  const txid = String(pix.txid || "");
+  if (!txid || efiTxidsResolvidos.has(txid)) return "ignorado";
+
+  /* Marca como pago só se ainda não estava (idempotente). */
+  const { data: atualizados, error } = await supabase
+    .from("pix_pagamentos")
+    .update({ status: "pago", paid_at: dataNitro(pix.horario).toISOString() })
+    .eq("paymentid", txid)
+    .neq("status", "pago")
+    .select("*");
+
+  if (error) {
+    console.log("ERRO UPDATE EFI:", txid, error);
+    return "erro";
+  }
+
+  if (atualizados?.[0]) {
+    console.log("PIX PAGO (conciliacao): EfiBank", txid);
+    await enviarUtmifyNitro(atualizados[0], txid, pix.horario, "EfiBank");
+    efiTxidsResolvidos.add(txid);
+    return "confirmado";
+  }
+
+  /* Nada atualizado: ou já estava pago, ou não existe registro
+     (ex.: falha ao gravar no Supabase quando o Pix foi gerado). */
+  const { data: existente } = await supabase
+    .from("pix_pagamentos")
+    .select("paymentid")
+    .eq("paymentid", txid)
+    .maybeSingle();
+
+  if (existente) {
+    efiTxidsResolvidos.add(txid);
+    return "ja_pago";
+  }
+
+  const valorCents = Math.round(Number(pix.valor || 0) * 100);
+  const registro = {
+    paymentid: txid,
+    gclid: "",
+    leadid: "",
+    acc: "",
+    camp: "",
+    mail: "",
+    cid: "",
+    valor: valorCents,
+    status: "pago",
+    paid_at: dataNitro(pix.horario).toISOString(),
+    utm_source: "",
+    utm_campaign: "",
+    utm_medium: "",
+    utm_content: "",
+    utm_term: "",
+    produto: "Lari",
+    produtoid: "lari-efi"
+  };
+
+  const { error: erroInsert } = await supabase
+    .from("pix_pagamentos")
+    .insert(registro);
+
+  if (erroInsert) {
+    console.log("ERRO INSERT PIX EFI SEM REGISTRO:", txid, erroInsert);
+    return "erro";
+  }
+
+  console.log("PIX EFI SEM REGISTRO RECUPERADO:", txid, valorCents);
+  await enviarUtmifyNitro(
+    { ...registro, created_at: pix.horario },
+    txid,
+    pix.horario,
+    "EfiBank"
+  );
+  efiTxidsResolvidos.add(txid);
+  return "recuperado";
+}
+
+let conciliandoEfi = false;
+
+async function conciliarPixEfi(inicio, fim, rotulo) {
+  if (!supabase || !efiConfigurada()) return;
+
+  const recebidos = await efiListarPixRecebidos(inicio, fim);
+  const contagem = {};
+
+  for (const pix of recebidos) {
+    let resultado = "erro";
+    try {
+      resultado = await registrarPixRecebidoEfi(pix);
+    } catch (e) {
+      console.log("ERRO CONCILIAR PIX EFI:", pix.txid, e.message);
     }
+    if (!pix.txid) resultado = "sem_txid";
+    contagem[resultado] = (contagem[resultado] || 0) + 1;
+  }
 
-    for (const p of pendentes || []) {
+  if (rotulo || contagem.confirmado || contagem.recuperado) {
+    console.log(
+      `CONCILIACAO EFI ${rotulo || "recentes"}: ${recebidos.length} Pix recebidos`,
+      JSON.stringify(contagem)
+    );
+  }
+}
+
+async function conciliarRecentesEfi() {
+  if (conciliandoEfi) return;
+  conciliandoEfi = true;
+  try {
+    const fim = new Date();
+    const inicio = new Date(fim.getTime() - 2 * 60 * 60 * 1000);
+    await conciliarPixEfi(inicio, fim);
+  } catch (e) {
+    console.log("ERRO CONCILIACAO EFI:", e.response?.data || e.message);
+  } finally {
+    conciliandoEfi = false;
+  }
+}
+
+/* Recuperação ao iniciar: últimos 3 dias, em blocos de 24h. */
+async function recuperarUltimosDiasEfi(dias = 3) {
+  if (!supabase || !efiConfigurada()) return;
+  conciliandoEfi = true;
+  try {
+    const agora = Date.now();
+    for (let d = dias; d >= 1; d--) {
+      const inicio = new Date(agora - d * 24 * 60 * 60 * 1000);
+      const fim = new Date(agora - (d - 1) * 24 * 60 * 60 * 1000);
       try {
-        await verificarPagamentoEfi(p.paymentid);
+        await conciliarPixEfi(inicio, fim, `dia -${d}`);
       } catch (e) {
         console.log(
-          "ERRO CONFERIR EFI:",
-          p.paymentid,
+          "ERRO RECUPERACAO EFI:",
+          `dia -${d}`,
           e.response?.data || e.message
         );
       }
     }
   } finally {
-    conferindoEfi = false;
+    conciliandoEfi = false;
   }
 }
 
-setInterval(conferirPendentesEfi, 60 * 1000);
+setTimeout(recuperarUltimosDiasEfi, 10 * 1000);
+setInterval(conciliarRecentesEfi, 60 * 1000);
 
 
 /* =========================================================
